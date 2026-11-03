@@ -338,7 +338,7 @@ export function loadGameState(serialized) {
       customer.arrivalTimer ??= 0;
       if (!customer.serviceStatus) {
         const seat = CAFE_SEATS.find((candidate) => candidate.id === customer.seatId);
-        customer.serviceStatus = customer.phase === 'browsing' && seat?.style !== 'stool' ? 'waiting' : 'served';
+        customer.serviceStatus = customer.phase === 'browsing' && seat && seat.style !== 'stool' ? 'waiting' : 'served';
       }
     }
     state.experience ??= 0;

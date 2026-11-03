@@ -222,7 +222,7 @@ test('unhappy expired-stock visits are very likely to create a low-star public r
   const review = maybeLeaveReview(state, customer);
   assert.ok(review);
   assert.equal(review.rating, 1);
-  assert.match(review.text, /whole milk/i);
+  assert.match(review.text, /house coffee/i);
   assert.equal(review.outcome, 'expired');
   assert.ok(state.reputation < before);
   assert.equal(reviewSummary(state).count, 5);
@@ -272,7 +272,7 @@ test('expired-item complaints turn into a review when the unhappy shopper leaves
   advanceGame(state, 3.3);
   assert.equal(state.customers.length, 0);
   assert.equal(state.reviews[0].rating, 1);
-  assert.match(state.reviews[0].text, /bananas/i);
+  assert.match(state.reviews[0].text, /banana toast/i);
   assert.ok(state.reputation < startingTrust - 2.25);
   assert.ok(state.events.some((event) => event.type === 'review'));
 });
