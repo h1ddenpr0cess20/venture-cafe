@@ -67,7 +67,12 @@ export const PIECES = [
 ];
 export const PIECE_BY_ID = Object.fromEntries(PIECES.map((p) => [p.id, p]));
 export const PIECE_OF_FIXTURE = Object.fromEntries(PIECES.flatMap((p) => p.fixtures.map((f) => [f, p.id])));
-export const COUNTER = { x: 3.8, z: -5.45, w: 7.6, d: 1.05, top: 1.14 }; // long service bar
+export const COUNTER = { x: 3.8, z: -5.45, w: 7.6, d: 1.05, top: 0.95 }; // long service bar
+// Heights at the tables. A seated diner's hips sit at the engine's `sit` height, so they are lifted
+// by SIT_LIFT to rest on a seat SEAT_TOP high, with the table top a comfortable reach above it.
+export const TABLE_TOP = 0.7;
+export const SEAT_TOP = 0.36;
+export const SIT_LIFT = 0.12;
 export const BACKBAR = { x: 3.8, z: -6.65, w: 7.3, d: 0.32 };
 export const BACKROOM_FIXTURES = {
   rack: { x: -8.0, z: -4.3, w: 0.7, d: 2.0 },

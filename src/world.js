@@ -13,7 +13,7 @@ import {
   SHELL, FRONT_DOOR, REAR_DOOR, BACKROOM, SIDEWALK, LEVELS, GONDOLA, COOLER_LEVELS, COOLER_HEIGHT, BAKERY_TOP, COUNTER,
   BACKBAR, SLOTS, DOOR_IN, SIDEWALK_SPAWN, SIDEWALK_EXITS, CHECKOUT, LOU_HOME, BOB_HOME, WAITER_HOME, KITCHEN_PASS, PLAYER_HOME,
   GONDOLA_2_BOARDS, BIN_SIZE, PIECES, PIECE_BY_ID, pieceOfProduct, isStanding, placementOf, setLayout, footprint, snapPlacement, placementProblem,
-  navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS, CAFE_SERVICE_STOPS, CAFE_PLACE_SETTINGS,
+  navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS, CAFE_SERVICE_STOPS, CAFE_PLACE_SETTINGS, TABLE_TOP, SIT_LIFT,
 } from './layout.js';
 import { wallOpacity, easeOpacity, WALL_MODES } from './walls.js';
 import { CAST, DETAIL, loadingJobs, backgroundJobs, FIRST_WAVE } from './cast.js';
@@ -562,7 +562,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   const readyResidents = new Set(FIRST_WAVE);
   const servicePlates = new Map(CAFE_PLACE_SETTINGS.map((place) => {
     const plate = createBreakfastPlate(GFX, place.plateKind);
-    plate.position.set(place.x, 0.84, place.z);
+    plate.position.set(place.x, TABLE_TOP + 0.02, place.z);
     plate.scale.setScalar(0.22);
     plate.visible = false;
     scene.add(plate);
@@ -623,7 +623,9 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
       const point = pointOnRoute(actor.route, progress);
       const ahead = pointOnRoute(actor.route, Math.min(1, progress + 0.025));
       const seated = progress >= 1 && customer.phase === 'browsing';
-      actor.model.group.position.set(point[0], actor.floor, point[2]);
+      // Seated diners are lifted onto the seat as they settle, and drop back to the floor when they rise.
+      const lift = seated && progress >= 1 ? SIT_LIFT * Math.min(1, Math.max(0, actor.time - (actor.seatedAt ?? actor.time)) / 0.45) : 0;
+      actor.model.group.position.set(point[0], actor.floor + lift, point[2]);
       if (progress < 1) faceAlong(actor.model.group, point, ahead);
       else if (seated && actor.seat) actor.model.group.rotation.y = actor.seat.yaw;
       else if (customer.phase === 'checkout') actor.model.group.rotation.y = Math.PI / 2;
