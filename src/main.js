@@ -185,11 +185,12 @@ function updateHeader() {
   $('#foot-staff').textContent = waiterLabel ?? (waitingTables ? `${waitingTables} ORDERS IN SERVICE` : `${STAFF.length} CAFE CREW ON SHIFT`);
   const ingredientAlerts = CAFE_INGREDIENT_IDS.filter((id) => expiredQuantity(state, id) > 0 || shelfQuantity(state, id) === 0).length;
   const alertCount = ingredientAlerts;
+  const expiredUnits = CAFE_INGREDIENT_IDS.reduce((sum, id) => sum + expiredQuantity(state, id), 0);
   $('#shelf-alert-count').textContent = alertCount;
   $('#shelf-alert-count').classList.toggle('hidden', alertCount === 0);
   $('#bottom-message').textContent = state.dayStats.complaints
     ? `${state.dayStats.complaints} unhappy customer${state.dayStats.complaints === 1 ? '' : 's'} today. Check the dates.`
-    : health.expired ? `${health.expired} expired units need to come off the shelf.`
+    : expiredUnits ? `${expiredUnits} expired units need to come off the shelf.`
       : 'Fresh breakfast. Good coffee. Good people.';
   $('#start-overlay').classList.toggle('hidden', state.started);
   $('#player-controls')?.classList.toggle('hidden', !state.started || state.paused || state.dayEnded || state.gameOver);
@@ -412,6 +413,83 @@ function expansionPanel() {
 }
 
 
+
+
+function ordersPanel() {
+  const products = availableProducts(state).filter((product) => CAFE_INGREDIENT_IDS.includes(product.id));
+  const categories = [...new Set(products.map((product) => product.category))];
+  const grouped = categories.map((category) => {
+    const lines = products.filter((product) => product.category === category);
+    return `<div class="order-category"><div class="order-category-title">${escapeHtml(category)}<span>${lines.length} LINES</span></div>${lines.map((product) => {
+      const cases = state.orderCases[product.id] || 1;
+      const total = product.cost * product.caseSize * cases;
+      const shelf = shelfQuantity(state, product.id);
+      const back = stockroomQuantity(state, product.id);
+      return `<div class="order-row">
+        <span class="product-swatch" style="--swatch:${product.color}"></span>
+        <span class="order-product"><strong>${escapeHtml(product.short)}</strong><small>${product.caseSize} / case · ${money(product.cost)} each</small><small>${shelf} kitchen · ${back} dry store</small></span>
+        <span class="order-controls"><span class="case-stepper"><button data-action="case-down" data-product="${product.id}">−</button><b>${cases}</b><button data-action="case-up" data-product="${product.id}">+</button></span><strong>${money(total)}</strong><button class="mini-order-button" data-action="place-order" data-product="${product.id}">ADD</button></span>
+      </div>`;
+    }).join('')}</div>`;
+  }).join('');
+  return `
+    <div class="panel-section order-intro">
+      <div class="section-heading"><div><div class="eyebrow">WHOLESALE DEPOT</div><h3>Place an order</h3></div><span class="tag tag-muted">SAME-DAY DROP</span></div>
+      <p class="product-description">Cases arrive in the dry store. Move them to the kitchen, with the shortest-dated stock at the front.</p>
+      <div class="supplier-credit"><span>AVAILABLE CASH</span><strong>${money(state.cash)}</strong><small>Credit is separate. Draw it on the Books tab before ordering.</small></div>
+    </div>
+    <div class="order-catalog">${grouped}</div>
+    <div class="panel-section supplier-tip"><span class="tip-mark">✳</span><span><strong>BUY TO THE CLOCK.</strong><small>Eggs, milk and fresh produce turn quickly. Dry goods hold much longer.</small></span></div>`;
+}
+
+function financePanel() {
+  const available = Math.max(0, state.creditLimit - state.debt);
+  const debtRatio = Math.min(100, state.debt / state.creditLimit * 100);
+  const interest = state.debt * state.creditRate;
+  return `
+    <div class="panel-section">
+      <div class="section-heading"><div><div class="eyebrow">WORKING CAPITAL</div><h3>Books & borrowing</h3></div><span class="tag ${state.debt ? 'tag-warning' : 'tag-good'}">${state.debt ? 'CREDIT ACTIVE' : 'DEBT FREE'}</span></div>
+      <div class="finance-card"><div class="finance-card-top"><span>OUTSTANDING BALANCE</span><strong>${money(state.debt)}</strong></div><div class="debt-meter"><i style="width:${debtRatio}%"></i></div><div class="finance-card-foot"><span>${money(available)} available</span><span>${money(state.creditLimit)} limit</span></div></div>
+      <div class="loan-terms"><div><span>DAILY INTEREST</span><strong>1.25%</strong></div><div><span>INTEREST AT CURRENT BALANCE</span><strong>${money(interest)} / day</strong></div><div><span>PAYMENT DUE</span><strong>End of each day</strong></div></div>
+    </div>
+    <div class="panel-section">
+      <div class="section-heading"><div><div class="eyebrow">SHORT-TERM CREDIT</div><h3>Draw funds</h3></div></div>
+      <p class="product-description">Use credit to cover a supplier order or a rough day. Interest compounds into the balance at close. Borrow only what you can repay.</p>
+      <div class="borrow-form"><label for="borrow-amount">AMOUNT TO DRAW</label><div class="borrow-input"><span>$</span><input id="borrow-amount" type="number" min="25" max="${available}" step="25" value="250" /></div><button class="primary-button" data-action="borrow-custom">DRAW CREDIT</button></div>
+      <div class="quick-amounts">${[100, 250, 500].map((amount) => `<button class="secondary-button" data-action="borrow" data-amount="${amount}" ${available < amount ? 'disabled' : ''}>+${money(amount)}</button>`).join('')}</div>
+    </div>
+    <div class="panel-section">
+      <div class="section-heading"><div><div class="eyebrow">PAY IT BACK</div><h3>Repayment</h3></div></div>
+      <div class="repay-card"><div><strong>${money(state.debt)}</strong><small>Current principal + interest</small></div><button class="primary-button" data-action="repay-all" ${state.debt <= 0 || state.cash <= 0 ? 'disabled' : ''}>PAY IN FULL</button></div>
+      <div class="quick-amounts">${[100, 250, 500].map((amount) => `<button class="secondary-button" data-action="repay" data-amount="${amount}" ${state.debt <= 0 || state.cash <= 0 ? 'disabled' : ''}>PAY ${money(amount)}</button>`).join('')}</div>
+      <div class="fine-print">Repayments are taken from the register immediately. You cannot repay more cash than you have.</div>
+    </div>
+    <div class="panel-section">
+      <div class="section-heading"><div><div class="eyebrow">THE COST OF OPENING</div><h3>Daily overhead</h3></div></div>
+      <div class="cost-list"><div><span>Rent</span><b>${money(state.dailyCosts.rent)}</b></div><div><span>Payroll · ${STAFF.length} staff</span><b>${money(state.dailyCosts.payroll)}</b></div><div><span>Utilities & refrigeration</span><b>${money(state.dailyCosts.utilities)}</b></div><div><span>Interest (added to balance)</span><b>${money(interest)}</b></div><div class="cost-total"><span>Expected daily overhead</span><b>${money(state.dailyCosts.rent + state.dailyCosts.payroll + state.dailyCosts.utilities + interest)}</b></div></div>
+    </div>`;
+}
+
+function staffPanel() {
+  const initials = (person) => person.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+  const waiterStage = state.waiterWork?.stage ?? 'idle';
+  const waiterStatus = waiterStage === 'idle' ? 'ON STANDBY' : waiterStage === 'taking-order' ? 'TAKING AN ORDER' : waiterStage === 'preparing-order' ? 'WAITING ON THE KITCHEN' : ['walking-to-delivery', 'presenting'].includes(waiterStage) ? 'DELIVERING BREAKFAST' : 'ON THE FLOOR';
+  return `
+    <div class="panel-section">
+      <div class="section-heading"><div><div class="eyebrow">YOUR CREW</div><h3>People of the cafe</h3></div><span class="tag tag-good">${STAFF.length} ON SHIFT</span></div>
+      <p class="product-description">Good people make a good cafe. Your crew is on the clock whenever the shutters are up.</p>
+      <div class="staff-task-card">
+        <div class="staff-task-heading"><strong>TABLE SERVICE</strong><span>${waiterStatus}</span></div>
+        <p>The waiter takes each order, Bob prepares the meal, and the waiter brings it to the table.</p>
+        <small>Guests are seated first · meals use ingredients from the kitchen</small>
+      </div>
+      <div class="staff-list">${STAFF.map((person, index) => `<div class="staff-card"><div class="staff-avatar staff-avatar-${index}">${initials(person)}</div><div class="staff-copy"><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(person.role)}</span><small>${money(person.wage)} / day · full shift</small></div><span class="staff-status">ON DUTY</span></div>`).join('')}</div>
+    </div>
+    <div class="panel-section">
+      <div class="section-heading"><div><div class="eyebrow">HOUSEKEEPING</div><h3>Kitchen standards</h3></div></div>
+      <div class="standards-list"><div><span>✓</span> Rotate stock by expiry date, not delivery date.</div><div><span>✓</span> Keep milk, eggs and meat cold.</div><div><span>✓</span> Pull expired items from the kitchen and dry store.</div><div><span>✓</span> Keep enough cash in the register before the next order.</div></div>
+    </div>`;
+}
 
 function renderPanel({ preserveScroll = false } = {}) {
   const oldScroll = panel.scrollTop;
