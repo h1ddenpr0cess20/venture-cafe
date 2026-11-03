@@ -401,7 +401,7 @@ test('food-safety reviews take precedence when the same visit also has a cat enc
   });
   assert.equal(review.outcome, 'expired');
   assert.equal(review.rating, 1);
-  assert.match(review.text, /whole milk/i);
+  assert.match(review.text, /house coffee/i);
   assert.doesNotMatch(review.text, /Nyx/);
   assert.ok(state.reputation < before);
 });
