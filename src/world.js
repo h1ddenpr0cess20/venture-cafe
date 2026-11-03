@@ -13,7 +13,7 @@ import {
   SHELL, FRONT_DOOR, REAR_DOOR, BACKROOM, SIDEWALK, LEVELS, GONDOLA, COOLER_LEVELS, COOLER_HEIGHT, BAKERY_TOP, COUNTER,
   BACKBAR, SLOTS, DOOR_IN, SIDEWALK_SPAWN, SIDEWALK_EXITS, CHECKOUT, LOU_HOME, BOB_HOME, WAITER_HOME, KITCHEN_PASS, PLAYER_HOME,
   GONDOLA_2_BOARDS, BIN_SIZE, PIECES, PIECE_BY_ID, pieceOfProduct, isStanding, placementOf, setLayout, footprint, snapPlacement, placementProblem,
-  navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS, CAFE_SERVICE_STOPS,
+  navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS, CAFE_SERVICE_STOPS, CAFE_PLACE_SETTINGS,
 } from './layout.js';
 import { wallOpacity, easeOpacity, WALL_MODES } from './walls.js';
 import { CAST, DETAIL, loadingJobs, backgroundJobs, FIRST_WAVE } from './cast.js';
@@ -560,13 +560,13 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   // ——— customers: residents walk in off the sidewalk, shop, queue at the counter and leave ———
   const customerActors = new Map();
   const readyResidents = new Set(FIRST_WAVE);
-  const servicePlates = new Map(CAFE_SERVICE_STOPS.map((stop) => {
-    const plate = createBreakfastPlate(GFX, stop.plateKind);
-    plate.position.set(stop.plateX, 0.84, stop.plateZ);
+  const servicePlates = new Map(CAFE_PLACE_SETTINGS.map((place) => {
+    const plate = createBreakfastPlate(GFX, place.plateKind);
+    plate.position.set(place.x, 0.84, place.z);
     plate.scale.setScalar(0.22);
     plate.visible = false;
     scene.add(plate);
-    return [stop.id, plate];
+    return [place.seatId, plate];
   }));
   const stand = (productId) => { const [x, z] = SLOTS[productId].stand; return [x, 0, z]; };
 
@@ -643,13 +643,8 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
         actor.poseAccumulator %= 0.05;
       }
     }
-    for (const stop of CAFE_SERVICE_STOPS) {
-      const occupiedAndServed = state.customers.some((customer) => {
-        const seat = CAFE_SEATS.find((candidate) => candidate.id === customer.seatId);
-        return seat?.tableId === stop.id && customer.phase === 'browsing' && customer.serviceStatus === 'served';
-      });
-      const plate = servicePlates.get(stop.id);
-      if (plate) plate.visible = occupiedAndServed;
+    for (const [seatId, plate] of servicePlates) {
+      plate.visible = state.customers.some((customer) => customer.seatId === seatId && customer.phase === 'browsing' && customer.serviceStatus === 'served');
     }
   }
 

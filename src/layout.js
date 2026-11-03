@@ -119,6 +119,15 @@ export const CAFE_SERVICE_STOPS = [
     plateKind: 'omelette',
   })),
 ];
+/** A place setting in front of each dining seat, so every diner's meal lands on the table in front of them. */
+const PLATE_KINDS = ['scramble', 'sunny', 'omelette'];
+export const CAFE_PLACE_SETTINGS = CAFE_SEATS.filter((seat) => seat.style !== 'stool').map((seat, index) => ({
+  seatId: seat.id,
+  tableId: seat.tableId,
+  x: seat.style === 'booth' ? -6.15 : seat.x + Math.sin(seat.yaw) * 0.8,
+  z: seat.z,
+  plateKind: PLATE_KINDS[index % PLATE_KINDS.length],
+}));
 export const CAFE_FURNITURE = [
   ...CAFE_TABLES.map((table) => ({ x: table.x, z: table.z, w: table.w, d: table.d })),
   ...CAFE_BOOTHS.map((booth) => ({ x: booth.x - 0.67, z: booth.z, w: 0.14, d: booth.depth + 0.12 })),

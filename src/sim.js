@@ -621,7 +621,10 @@ function spawnCustomer(state) {
   const diningSeats = CAFE_SEATS.filter((candidate) => candidate.style !== 'stool');
   if (state.customers.length >= Math.min(10, diningSeats.length)) return null;
   const occupiedSeats = new Set(state.customers.map((customer) => customer.seatId).filter(Boolean));
-  const seat = diningSeats.find((candidate) => !occupiedSeats.has(candidate.id));
+  // Guests spread out: take a free seat at the quietest table, so nobody shares a table while another sits empty.
+  const diners = (tableId) => diningSeats.filter((candidate) => candidate.tableId === tableId && occupiedSeats.has(candidate.id)).length;
+  const seat = diningSeats.filter((candidate) => !occupiedSeats.has(candidate.id))
+    .reduce((best, candidate) => (!best || diners(candidate.tableId) < diners(best.tableId) ? candidate : best), null);
   if (!seat) return null;
   const resident = chooseResident(state);
   const menuChoices = CAFE_MENU.filter((item) => Object.keys(item.ingredients ?? {}).every((productId) => isAvailable(state, productId)));

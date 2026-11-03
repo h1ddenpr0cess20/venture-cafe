@@ -571,3 +571,25 @@ test('new public reviews score the meal and the service separately', () => {
   assert.equal(weak.outcome, 'poor');
   assert.match(weak.text, /disappointing|missed the mark|not good/i);
 });
+
+test('guests spread across tables, and each diner has a place setting on the table in front of their own seat', async () => {
+  const { CAFE_SEATS, CAFE_TABLES, CAFE_PLACE_SETTINGS } = await import('../src/layout.js');
+  const state = prepareState();
+  state.started = true;
+  state.paused = false;
+  const tableOf = (customer) => CAFE_SEATS.find((seat) => seat.id === customer.seatId).tableId;
+  for (let i = 0; i < 400 && state.customers.length < 3; i++) advanceGame(state, 0.25);
+  assert.ok(state.customers.length >= 2, 'several guests arrived');
+  const first = state.customers.slice(0, Math.min(state.customers.length, 3));
+  assert.equal(new Set(first.map(tableOf)).size, first.length, 'nobody shares a table while another sits empty');
+  const seen = new Set();
+  for (const place of CAFE_PLACE_SETTINGS) {
+    assert.ok(!seen.has(`${place.x},${place.z}`), `${place.seatId} has its own place`);
+    seen.add(`${place.x},${place.z}`);
+    const table = CAFE_TABLES.find((t) => t.id === place.tableId);
+    if (table) {
+      assert.ok(Math.abs(place.x - table.x) < table.w / 2 && Math.abs(place.z - table.z) < table.d / 2, `${place.seatId} is set on its table`);
+      assert.notEqual(place.x, table.x, 'not in the middle of the table');
+    }
+  }
+});
