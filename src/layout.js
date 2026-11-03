@@ -1,7 +1,7 @@
 /**
  * The store's floor plan and everything that walks across it: the shell's doors,
  * the fixtures and their footprints, where each product is shelved, and the
- * waypoint pathfinder shoppers, staff and cats share. No rendering in here, so
+ * waypoint pathfinder shoppers and staff share. No rendering in here, so
  * it can be tested on its own.
  *
  * x runs left to right, z from the back of the store (negative) to the street
@@ -67,7 +67,12 @@ export const PIECES = [
 ];
 export const PIECE_BY_ID = Object.fromEntries(PIECES.map((p) => [p.id, p]));
 export const PIECE_OF_FIXTURE = Object.fromEntries(PIECES.flatMap((p) => p.fixtures.map((f) => [f, p.id])));
-export const COUNTER = { x: 3.8, z: -5.45, w: 7.6, d: 1.05, top: 1.14 }; // long service bar
+export const COUNTER = { x: 3.8, z: -5.45, w: 7.6, d: 1.05, top: 0.95 }; // long service bar
+// Heights at the tables. A seated diner's hips sit at the engine's `sit` height, so they are lifted
+// by SIT_LIFT to rest on a seat SEAT_TOP high, with the table top a comfortable reach above it.
+export const TABLE_TOP = 0.7;
+export const SEAT_TOP = 0.36;
+export const SIT_LIFT = 0.12;
 export const BACKBAR = { x: 3.8, z: -6.65, w: 7.3, d: 0.32 };
 export const BACKROOM_FIXTURES = {
   rack: { x: -8.0, z: -4.3, w: 0.7, d: 2.0 },
@@ -119,6 +124,15 @@ export const CAFE_SERVICE_STOPS = [
     plateKind: 'omelette',
   })),
 ];
+/** A place setting in front of each dining seat, so every diner's meal lands on the table in front of them. */
+const PLATE_KINDS = ['scramble', 'sunny', 'omelette'];
+export const CAFE_PLACE_SETTINGS = CAFE_SEATS.filter((seat) => seat.style !== 'stool').map((seat, index) => ({
+  seatId: seat.id,
+  tableId: seat.tableId,
+  x: seat.style === 'booth' ? -6.15 : seat.x + Math.sin(seat.yaw) * 0.8,
+  z: seat.z,
+  plateKind: PLATE_KINDS[index % PLATE_KINDS.length],
+}));
 export const CAFE_FURNITURE = [
   ...CAFE_TABLES.map((table) => ({ x: table.x, z: table.z, w: table.w, d: table.d })),
   ...CAFE_BOOTHS.map((booth) => ({ x: booth.x - 0.67, z: booth.z, w: 0.14, d: booth.depth + 0.12 })),
@@ -203,14 +217,7 @@ export const LOU_HOME = [3.8, 0, -6.35];                    // counter host behi
 export const BOB_HOME = [-7.0, 0, -3.35];                  // Bob's kitchen/barista station
 export const WAITER_HOME = [6.4, 0, -1.8];                 // dining-room service station
 export const KITCHEN_PASS = [-6.7, 0, -1.82];                 // just outside the kitchen pass
-export const MANAGER_HOME = [-5.0, 0, -3.25];              // cafe manager near the kitchen pass
 export const PLAYER_HOME = [1.1, 0, -6.18];
-
-export const CAT_PATROLS = [
-  [[-8.2, -1.7], [-8.2, 5.7], [-5.2, 5.7], [-5.2, -1.7]],
-  [[1.8, -2.8], [6.4, -2.8], [6.4, -1.0], [1.8, -1.0]],
-  [[1.9, 2.2], [6.2, 2.2], [6.2, 5.8], [1.9, 5.8]],
-];
 
 /**
  * The street furniture round the shop, from the engine's `scenery/street` (world.js stands the
@@ -237,7 +244,7 @@ export const STREET_ITEMS = [
 
 // ——— navigation ———
 // Footprints are inflated by `clearance` so a shopper has room for their
-// shoulders; the same grid drives shoppers, staff, cats and the owner.
+// shoulders; the same grid drives shoppers, staff and the owner.
 export const NAV = { minX: -8.5, maxX: 8.5, minZ: -6.5, maxZ: 10.3, step: 0.3, clearance: 0.34 };
 
 const w = SHELL.wall;
@@ -496,7 +503,7 @@ function withLayout(ownedIds, layout, fn) {
 export function shopStillWorks(ownedIds, layout, extraStands = []) {
   return withLayout(ownedIds, layout, () => {
     const from = [SIDEWALK_SPAWN[0], 0, SIDEWALK_SPAWN[2]];
-    const keys = [CHECKOUT, BOB_HOME, MANAGER_HOME, DOOR_IN, ...extraStands];
+    const keys = [CHECKOUT, BOB_HOME, DOOR_IN, ...extraStands];
     // Lines on pieces that are not bought have nowhere to stand yet.
     const live = Object.entries(SLOTS).filter(([id]) => !LOCAL_SLOTS[id] || standing(PIECE_BY_ID[LOCAL_SLOTS[id][0]], new Set(ownedIds))).map(([, s]) => [s.stand[0], 0, s.stand[1]]);
     return [...keys, ...live].every((to) => !navBlocked(to[0], to[2]) && findWalkPath(from, to, { strict: true }));

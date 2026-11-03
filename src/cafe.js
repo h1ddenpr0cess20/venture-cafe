@@ -1,8 +1,8 @@
 import { buildPan } from 'madness-engine/props/pan/index';
 import { createStatic } from 'madness-engine/models/model';
-import chairDefinition from 'madness-engine/props/chair';
 import { GROCERIES } from 'madness-engine/props/groceries';
-import { COUNTER, CAFE_TABLES, CAFE_BOOTHS, CAFE_BAR_STOOLS, CAFE_SEATS } from './layout.js';
+import { CAFE } from 'madness-engine/props/cafe';
+import { COUNTER, CAFE_TABLES, CAFE_BOOTHS, CAFE_BAR_STOOLS, CAFE_SEATS, SEAT_TOP } from './layout.js';
 import { createBreakfastPlate } from './cafe-food.js';
 
 function box(GFX, parent, x, y, z, w, h, d, material) {
@@ -10,47 +10,29 @@ function box(GFX, parent, x, y, z, w, h, d, material) {
   mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; parent.add(mesh); return mesh;
 }
 function cylinder(GFX, parent, x, y, z, rt, rb, h, material, segments = 24) {
-  const mesh = new GFX.Mesh(new GFX.CylinderGeometry(rt, rb, h, segments));
+  const mesh = new GFX.Mesh(new GFX.CylinderGeometry(rt, rb, h, segments), material);
   mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; parent.add(mesh); return mesh;
 }
 
+// The engine's café furniture is built for a seat 0.14 up; the cafe's seats are SEAT_TOP up.
+const FURNITURE_SCALE = SEAT_TOP / 0.14;
+
 export function buildCafeFurniture(GFX, scene) {
   const walnut = new GFX.MeshStandardMaterial({ color: '#60432f', roughness: 0.78 });
-  const walnutLight = new GFX.MeshStandardMaterial({ color: '#9b704b', roughness: 0.7 });
   const brass = new GFX.MeshStandardMaterial({ color: '#b99a61', metalness: 0.58, roughness: 0.34 });
-  const upholstery = new GFX.MeshStandardMaterial({ color: '#315b4c', roughness: 0.86 });
-  const upholsteryLight = new GFX.MeshStandardMaterial({ color: '#547564', roughness: 0.88 });
   const porcelain = new GFX.MeshStandardMaterial({ color: '#f4eedf', roughness: 0.28 });
-  for (const table of CAFE_TABLES) {
-    cylinder(GFX, scene, table.x, 0.38, table.z, 0.13, 0.22, 0.68, brass, 20);
-    cylinder(GFX, scene, table.x, 0.075, table.z, 0.34, 0.34, 0.12, walnut, 24);
-    box(GFX, scene, table.x, 0.78, table.z, table.w, 0.08, table.d, walnutLight);
-    box(GFX, scene, table.x, 0.825, table.z, table.w - 0.1, 0.012, table.d - 0.1, walnut);
-  }
-  for (const booth of CAFE_BOOTHS) {
-    box(GFX, scene, booth.x - 0.22, 0.075, booth.z, 1.05, 0.15, booth.depth + 0.08, walnut);
-    box(GFX, scene, booth.x + 0.08, 0.15, booth.z, 0.88, 0.055, booth.depth - 0.12, upholsteryLight);
-    box(GFX, scene, booth.x - 0.72, 0.53, booth.z, 0.14, 0.82, booth.depth + 0.12, upholstery);
-    for (const zOffset of [-booth.depth / 2 + 0.08, booth.depth / 2 - 0.08]) {
-      box(GFX, scene, booth.x - 0.22, 0.28, booth.z + zOffset, 0.9, 0.28, 0.14, walnut);
-      box(GFX, scene, booth.x - 0.22, 0.44, booth.z + zOffset, 0.82, 0.08, 0.12, upholstery);
-    }
-    cylinder(GFX, scene, -5.85, 0.38, booth.z, 0.11, 0.16, 0.68, brass, 18);
-    cylinder(GFX, scene, -5.85, 0.075, booth.z, 0.3, 0.3, 0.12, walnut, 24);
-    box(GFX, scene, -5.85, 0.78, booth.z, 1.1, 0.08, 1.05, walnutLight);
-    box(GFX, scene, -5.85, 0.825, booth.z, 1.0, 0.012, 0.95, walnut);
-  }
-  for (const seat of CAFE_SEATS.filter((candidate) => candidate.style === 'chair')) {
-    const chair = createStatic(GFX, chairDefinition, { detail: 0.85 });
-    chair.position.set(seat.x, 0, seat.z); chair.rotation.y = seat.yaw; scene.add(chair);
-  }
-  for (const seat of CAFE_BAR_STOOLS) {
-    cylinder(GFX, scene, seat.x, 0.68, seat.z, 0.25, 0.27, 0.09, upholstery, 28);
-    cylinder(GFX, scene, seat.x, 0.33, seat.z, 0.045, 0.06, 0.62, brass, 16);
-    cylinder(GFX, scene, seat.x, 0.035, seat.z, 0.25, 0.25, 0.06, walnut, 24);
-    const footrest = new GFX.Mesh(new GFX.TorusGeometry(0.21, 0.018, 8, 28), brass);
-    footrest.rotation.x = Math.PI / 2; footrest.position.set(seat.x, 0.29, seat.z); scene.add(footrest);
-  }
+  // The dining furniture is the engine's own (`props/cafe`), made for a seat 0.14 up and brought up to ours.
+  const furniture = (definition, x, z, yaw = 0) => {
+    const piece = createStatic(GFX, definition, { detail: 0.8 });
+    piece.scale.setScalar(FURNITURE_SCALE);
+    piece.position.set(x, 0, z); piece.rotation.y = yaw; scene.add(piece);
+    return piece;
+  };
+  for (const table of CAFE_TABLES) furniture(CAFE.cafetable, table.x, table.z);
+  // A booth's bench runs along z with its back to the west wall; the engine's booth faces +z, so turn it to face +x.
+  for (const booth of CAFE_BOOTHS) furniture(CAFE.cafebooth, booth.x, booth.z, Math.PI / 2);
+  for (const seat of CAFE_SEATS.filter((candidate) => candidate.style === 'chair')) furniture(CAFE.cafechair, seat.x, seat.z, seat.yaw);
+  for (const seat of CAFE_BAR_STOOLS) furniture(CAFE.cafestool, seat.x, seat.z);
   const cupMat = new GFX.MeshStandardMaterial({ color: '#eee5d4', roughness: 0.23 });
   const coffee = new GFX.MeshStandardMaterial({ color: '#493326', roughness: 0.2 });
   for (const [x, z] of [[0.9, -5.45], [2.15, -5.45]]) {

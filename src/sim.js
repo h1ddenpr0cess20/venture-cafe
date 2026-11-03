@@ -89,14 +89,6 @@ export const STAFF = [
   { id: 'bob', name: 'Bob', role: 'Barista · breakfast preparation', character: 'barista', wage: 12, color: '#64a9a3', quality: 88 },
   { id: 'waiter', name: 'Waiter', role: 'Dining room · table service', character: 'waiter', wage: 15, color: '#c5a06a', quality: 82 },
 ];
-export const PURCHASING_MANAGER = { id: 'rafael', name: 'Rafael Ortiz', role: 'Purchasing manager · supplier orders', character: 'suit', wage: 18, hireCost: 300, unlockLevel: 5, cashReserve: 240, firstReviewDelay: 5, reviewInterval: 30, maxLinesPerReview: 3 };
-
-export const CAT_ROSTER = [
-  { id: 'blaze', name: 'Blaze', coat: 'ginger', job: 'Produce supervisor', character: 'cat-ginger', place: [-4.25, 0, -5.65] },
-  { id: 'jinx', name: 'Jinx', coat: 'calico', job: 'Window manager', character: 'cat-calico', place: [0.55, 0, 4.8] },
-  { id: 'nyx', name: 'Nyx', coat: 'black', job: 'Night auditor', character: 'cat-black', place: [4.65, 0, 4.8] },
-];
-
 /**
  * A small, hand-written review history establishes the shop's reputation
  * before the new owner takes over. New reviews are chosen from the banks
@@ -180,26 +172,6 @@ export const REVIEW_BANK = Object.freeze({
     'Convenient location, disappointing visit. I had to find breakfast somewhere else.',
     'Not the usual friendly experience. Hopefully today was just an off day.',
     'My eggs were overcooked and the coffee was lukewarm. A disappointing start to the day.',
-  ],
-  catLoved: [
-    'Came in for {{product}} and stayed an extra minute to say hello to {{cat}}. Five stars for the welcome.',
-    '{{cat}} stretched in the window seat and made my whole morning. Good coffee, good people, good cat.',
-    'The little cafe greeter {{cat}} is the reason I take this route to work. Also, the {{product}} was great.',
-    'A proper neighborhood cafe. {{cat}} let me offer a polite hello while Lou poured my coffee.',
-    'My kid talks about {{cat}} all week. We came for {{product}}, but the cafe cat was the highlight.',
-    'A friendly cat encounter and a very good breakfast. {{cat}} deserves an employee-of-the-month plaque.',
-    'I am not usually a cat person, but {{cat}} was very sweet. Service was quick too.',
-    'The cafe has character, and apparently that character has whiskers. Lovely visit for {{product}}.',
-  ],
-  catAnnoyed: [
-    '{{cat}} kept weaving around my chair. Cute from a distance, but distracting while I was eating.',
-    'I like cats, but {{cat}} jumped beside the counter while I was waiting for {{product}}.',
-    'The cat hair near my table was not ideal. Please keep the dining surfaces clear.',
-    '{{cat}} startled me by darting between the tables. I just wanted to enjoy breakfast.',
-    'The cats are part of the charm for some people, I guess. {{cat}} blocked the booth I wanted today.',
-    'I came in for {{product}}, not to negotiate table space with {{cat}}. The staff were nice about it.',
-    '{{cat}} knocked a little table decoration over beside me. No harm done, but it made the visit stressful.',
-    'Not a fan of animals around food. {{cat}} was too close to the dining tables while I was eating.',
   ],
 });
 
@@ -329,8 +301,10 @@ export function loadGameState(serialized) {
     state.orderCases = { ...Object.fromEntries(PRODUCTS.map((p) => [p.id, 1])), ...state.orderCases };
     state.reviews ??= OPENING_REVIEWS.map((review) => ({ ...review })).reverse();
     state.dayStats ??= {};
-    state.dayStats.catLoved ??= 0;
-    state.dayStats.catAnnoyed ??= 0;
+    state.reviews = state.reviews.filter((review) => !String(review.outcome ?? '').startsWith('cat-'));
+    if (Array.isArray(state.events)) state.events = state.events.filter((event) => event.type !== 'cat');
+    delete state.dayStats.catLoved;
+    delete state.dayStats.catAnnoyed;
     state.dayStats.foodQualityTotal ??= 0;
     state.dayStats.serviceQualityTotal ??= 0;
     state.dayStats.ordersServed ??= 0;
@@ -353,12 +327,11 @@ export function loadGameState(serialized) {
       customer.serviceQuality ??= null;
     }
     state.experience ??= 0;
-    state.purchasingManagerHired ??= false;
-    state.automaticPurchasingEnabled ??= true;
-    state.nextAutoOrderAt ??= state.minute + (state.purchasingManagerHired ? PURCHASING_MANAGER.firstReviewDelay : 35);
+    // Saves from before the cafe had no purchasing manager or cats may carry their leftovers.
+    for (const key of ['purchasingManagerHired', 'automaticPurchasingEnabled', 'nextAutoOrderAt']) delete state[key];
     state.playerPosition ??= { x: 1.1, z: -6.18 };
     if (Math.abs(state.playerPosition.x - 4.5) < 0.1 && Math.abs(state.playerPosition.z - 5.2) < 0.1) state.playerPosition = { x: 1.1, z: -6.18 };
-    state.dailyCosts.payroll = STAFF_PAYROLL + (state.purchasingManagerHired ? PURCHASING_MANAGER.wage : 0);
+    state.dailyCosts.payroll = STAFF_PAYROLL;
     // Give existing saves a one-time, prepaid opening reserve so the floor lead
     // can demonstrate automatic replenishment immediately after this update.
     if (!state.staffReserveSeeded) {
@@ -407,9 +380,6 @@ export function createGameState(seed = 20261031) {
     creditRate: 0.0125,
     reputation: 78,
     experience: 0,
-    purchasingManagerHired: false,
-    automaticPurchasingEnabled: true,
-    nextAutoOrderAt: DAY_OPEN + 35,
     playerPosition: { x: 1.1, z: -6.18 },
     started: false,
     paused: true,
@@ -428,7 +398,7 @@ export function createGameState(seed = 20261031) {
     reviews: OPENING_REVIEWS.map((review) => ({ ...review })).reverse(),
     reviewSequence: OPENING_REVIEWS.length,
     random,
-    dayStats: { revenue: 0, unitsSold: 0, customers: 0, complaints: 0, waste: 0, purchases: 0, grossProfit: 0, stockouts: 0, catLoved: 0, catAnnoyed: 0, foodQualityTotal: 0, serviceQualityTotal: 0, ordersServed: 0 },
+    dayStats: { revenue: 0, unitsSold: 0, customers: 0, complaints: 0, waste: 0, purchases: 0, grossProfit: 0, stockouts: 0, foodQualityTotal: 0, serviceQualityTotal: 0, ordersServed: 0 },
     lifetime: { revenue: 0, customers: 0, complaints: 0, waste: 0, days: 0 },
     dailyCosts: { rent: 24, payroll: STAFF_PAYROLL, utilities: 8 },
     supplierOrders: 0,
@@ -579,29 +549,28 @@ export function pullExpired(state, productId = null) {
  * in the world), with habits that shape the store's day: what they come for
  * (`favorites`), how much a price rise bothers them (`thrift`: the markup over
  * the usual price they will pay), how big a shop they make (`lines`: the chance
- * of a third basket line), when they tend to come in (`peak`: hours of the day),
- * and how they feel about the cats (`cats`: a nudge to the odds of being charmed).
+ * of a third basket line), when they tend to come in (`peak`: hours of the day).
  */
 export const RESIDENTS = [
-  { id: 'maya', name: 'Maya', full: 'Maya Okafor', character: 'tourist', tag: 'weekend visitor', look: { skin: '#6f4120', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.38, favorites: ['water', 'bananas', 'coffee', 'cereal'], thrift: 0.35, lines: 0.28, peak: [10, 17], cats: 0 },
-  { id: 'rico', name: 'Rico', full: 'Rico Alvarez', character: 'punk', tag: 'regular', look: { skin: '#c68642', hair: '#0e0a08', eyes: '#4a2e18' }, height: 1.4, favorites: ['soda', 'pizza', 'icecream'], thrift: 0.3, lines: 0.2, peak: [15, 21], cats: 0.05 },
-  { id: 'sunny', name: 'Sunny', full: 'Sunny Park', character: 'hippie', tag: 'produce fan', look: { skin: '#f0d0c0', hair: '#241810', eyes: '#2a1a10' }, height: 1.36, favorites: ['apples', 'tomatoes', 'lettuce', 'rice', 'beans'], thrift: 0.4, lines: 0.5, peak: [8, 13], cats: 0.12 },
-  { id: 'theo', name: 'Theo', full: 'Theo Laurent', character: 'artist', tag: 'local artist', look: { skin: '#8d5524', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.42, favorites: ['coffee', 'bread', 'cheese', 'butter'], thrift: 0.3, lines: 0.28, peak: [9, 15], cats: 0.05 },
-  { id: 'ari', name: 'Ari', full: 'Ari Cohen', character: 'hipster', tag: 'coffee regular', look: { skin: '#f6dcc8', hair: '#8a3a1e', eyes: '#5a86b0' }, height: 1.44, favorites: ['coffee', 'eggs', 'yogurt', 'bread'], thrift: 0.55, lines: 0.28, peak: [7, 10], cats: 0.1 },
-  { id: 'sal', name: 'Sal', full: 'Sal Haddad', character: 'cabbie', tag: 'night-shift driver', look: { skin: '#d19a6a', hair: '#241810', eyes: '#4a2e18' }, height: 1.42, favorites: ['coffee', 'water', 'bananas', 'deli'], thrift: 0.3, lines: 0.2, peak: [17, 21], cats: -0.05 },
-  { id: 'russo', name: 'Mrs. Russo', full: 'Rosa Russo', character: 'nonna', tag: 'neighbor', look: { skin: '#f0d0c0', hair: '#e8e6e0', eyes: '#6a7a8a' }, height: 1.24, favorites: ['pasta', 'tomatoes', 'cheese', 'bread', 'eggs'], thrift: 0.2, lines: 0.6, peak: [8, 12], cats: 0.15 },
-  { id: 'dwayne', name: 'Dwayne', full: 'Dwayne Brooks', character: 'beerguy', tag: 'after-work regular', look: { skin: '#533018', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.46, favorites: ['soda', 'pizza', 'deli', 'chicken'], thrift: 0.35, lines: 0.35, peak: [16, 21], cats: -0.1 },
-  { id: 'kenji', name: 'Kenji', full: 'Kenji Watanabe', character: 'salaryman', tag: 'commuter', look: { skin: '#f0d0c0', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.4, favorites: ['coffee', 'deli', 'bread', 'water', 'yogurt'], thrift: 0.6, lines: 0.28, peak: [7, 9], cats: 0 },
-  { id: 'marco', name: 'Marco', full: 'Marco Bianchi', character: 'pizzaiolo', tag: 'late lunch', look: { skin: '#e9b48f', hair: '#3a2414', eyes: '#4a2e18' }, height: 1.4, favorites: ['cheese', 'tomatoes', 'pasta', 'beef'], thrift: 0.3, lines: 0.4, peak: [13, 16], cats: 0.05 },
-  { id: 'jules', name: 'Jules', full: 'Jules Moreno', character: 'skater', tag: 'local kid', look: { skin: '#e0a97c', hair: '#5a3a1e', eyes: '#6a4a22' }, height: 1.2, favorites: ['soda', 'pizza', 'icecream', 'cereal'], thrift: 0.2, lines: 0.15, peak: [15, 19], cats: 0.18 },
-  { id: 'priya', name: 'Priya', full: 'Priya Nair', character: 'shopper', tag: 'weekly shop', look: { skin: '#a9703f', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.4, favorites: ['rice', 'beans', 'tomatoes', 'yogurt', 'lettuce', 'chicken'], thrift: 0.45, lines: 0.75, peak: [10, 15], cats: 0.05 },
-  { id: 'walt', name: 'Walt', full: 'Walter Jenkins', character: 'oldtimer', tag: 'been coming here forever', look: { skin: '#3b2314', hair: '#9a9a9a', eyes: '#4a2e18' }, height: 1.34, favorites: ['bread', 'milk', 'eggs', 'coffee', 'butter'], thrift: 0.15, lines: 0.3, peak: [7, 11], cats: 0.1 },
-  { id: 'luis', name: 'Luis', full: 'Luis Ortega', character: 'mailcarrier', tag: 'mail carrier', look: { skin: '#c68642', hair: '#241810', eyes: '#4a2e18' }, height: 1.42, favorites: ['water', 'bananas', 'deli', 'bread'], thrift: 0.35, lines: 0.2, peak: [11, 14], cats: 0.1 },
-  { id: 'aisha', name: 'Aisha', full: 'Aisha Rahman', character: 'crossingguard', tag: 'school crossing guard', look: { skin: '#a9703f', hair: '#241810', eyes: '#3a2414' }, height: 1.36, favorites: ['milk', 'eggs', 'cereal', 'bananas', 'apples'], thrift: 0.3, lines: 0.5, peak: [8, 9.5], cats: 0.1 },
-  { id: 'tomasz', name: 'Tomasz', full: 'Tomasz Kowalski', character: 'engineer', tag: 'site engineer', look: { skin: '#f6dcc8', hair: '#c8a45a', eyes: '#3a5a8a' }, height: 1.46, favorites: ['coffee', 'soda', 'deli', 'bread'], thrift: 0.4, lines: 0.3, peak: [7, 9], cats: -0.05 },
-  { id: 'camille', name: 'Camille', full: 'Camille Dubois', character: 'barista', tag: 'barista off shift', look: { skin: '#533018', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.38, favorites: ['coffee', 'yogurt', 'apples', 'lettuce', 'bread'], thrift: 0.35, lines: 0.35, peak: [14, 18], cats: 0.15 },
-  { id: 'zoe', name: 'Zoe', full: 'Zoe Tran', character: 'influencer', tag: 'wellness influencer', look: { skin: '#f0d0c0', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.4, favorites: ['yogurt', 'apples', 'water', 'lettuce', 'coffee'], thrift: 0.8, lines: 0.3, peak: [11, 17], cats: 0.2 },
-  { id: 'dmitri', name: 'Dmitri', full: 'Dmitri Volkov', character: 'foreman', tag: 'warehouse foreman', look: { skin: '#f6dcc8', hair: '#7a5230', eyes: '#6a6a2a' }, height: 1.46, favorites: ['beef', 'potatoes', 'eggs', 'bread'], thrift: 0.25, lines: 0.3, peak: [16, 20], cats: -0.1 },
+  { id: 'maya', name: 'Maya', full: 'Maya Okafor', character: 'tourist', tag: 'weekend visitor', look: { skin: '#6f4120', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.38, favorites: ['water', 'bananas', 'coffee', 'cereal'], thrift: 0.35, lines: 0.28, peak: [10, 17] },
+  { id: 'rico', name: 'Rico', full: 'Rico Alvarez', character: 'punk', tag: 'regular', look: { skin: '#c68642', hair: '#0e0a08', eyes: '#4a2e18' }, height: 1.4, favorites: ['soda', 'pizza', 'icecream'], thrift: 0.3, lines: 0.2, peak: [15, 21] },
+  { id: 'sunny', name: 'Sunny', full: 'Sunny Park', character: 'hippie', tag: 'produce fan', look: { skin: '#f0d0c0', hair: '#241810', eyes: '#2a1a10' }, height: 1.36, favorites: ['apples', 'tomatoes', 'lettuce', 'rice', 'beans'], thrift: 0.4, lines: 0.5, peak: [8, 13] },
+  { id: 'theo', name: 'Theo', full: 'Theo Laurent', character: 'artist', tag: 'local artist', look: { skin: '#8d5524', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.42, favorites: ['coffee', 'bread', 'cheese', 'butter'], thrift: 0.3, lines: 0.28, peak: [9, 15] },
+  { id: 'ari', name: 'Ari', full: 'Ari Cohen', character: 'hipster', tag: 'coffee regular', look: { skin: '#f6dcc8', hair: '#8a3a1e', eyes: '#5a86b0' }, height: 1.44, favorites: ['coffee', 'eggs', 'yogurt', 'bread'], thrift: 0.55, lines: 0.28, peak: [7, 10] },
+  { id: 'sal', name: 'Sal', full: 'Sal Haddad', character: 'cabbie', tag: 'night-shift driver', look: { skin: '#d19a6a', hair: '#241810', eyes: '#4a2e18' }, height: 1.42, favorites: ['coffee', 'water', 'bananas', 'deli'], thrift: 0.3, lines: 0.2, peak: [17, 21] },
+  { id: 'russo', name: 'Mrs. Russo', full: 'Rosa Russo', character: 'nonna', tag: 'neighbor', look: { skin: '#f0d0c0', hair: '#e8e6e0', eyes: '#6a7a8a' }, height: 1.24, favorites: ['pasta', 'tomatoes', 'cheese', 'bread', 'eggs'], thrift: 0.2, lines: 0.6, peak: [8, 12] },
+  { id: 'dwayne', name: 'Dwayne', full: 'Dwayne Brooks', character: 'beerguy', tag: 'after-work regular', look: { skin: '#533018', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.46, favorites: ['soda', 'pizza', 'deli', 'chicken'], thrift: 0.35, lines: 0.35, peak: [16, 21] },
+  { id: 'kenji', name: 'Kenji', full: 'Kenji Watanabe', character: 'salaryman', tag: 'commuter', look: { skin: '#f0d0c0', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.4, favorites: ['coffee', 'deli', 'bread', 'water', 'yogurt'], thrift: 0.6, lines: 0.28, peak: [7, 9] },
+  { id: 'marco', name: 'Marco', full: 'Marco Bianchi', character: 'pizzaiolo', tag: 'late lunch', look: { skin: '#e9b48f', hair: '#3a2414', eyes: '#4a2e18' }, height: 1.4, favorites: ['cheese', 'tomatoes', 'pasta', 'beef'], thrift: 0.3, lines: 0.4, peak: [13, 16] },
+  { id: 'jules', name: 'Jules', full: 'Jules Moreno', character: 'skater', tag: 'local kid', look: { skin: '#e0a97c', hair: '#5a3a1e', eyes: '#6a4a22' }, height: 1.2, favorites: ['soda', 'pizza', 'icecream', 'cereal'], thrift: 0.2, lines: 0.15, peak: [15, 19] },
+  { id: 'priya', name: 'Priya', full: 'Priya Nair', character: 'shopper', tag: 'weekly shop', look: { skin: '#a9703f', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.4, favorites: ['rice', 'beans', 'tomatoes', 'yogurt', 'lettuce', 'chicken'], thrift: 0.45, lines: 0.75, peak: [10, 15] },
+  { id: 'walt', name: 'Walt', full: 'Walter Jenkins', character: 'oldtimer', tag: 'been coming here forever', look: { skin: '#3b2314', hair: '#9a9a9a', eyes: '#4a2e18' }, height: 1.34, favorites: ['bread', 'milk', 'eggs', 'coffee', 'butter'], thrift: 0.15, lines: 0.3, peak: [7, 11] },
+  { id: 'luis', name: 'Luis', full: 'Luis Ortega', character: 'mailcarrier', tag: 'mail carrier', look: { skin: '#c68642', hair: '#241810', eyes: '#4a2e18' }, height: 1.42, favorites: ['water', 'bananas', 'deli', 'bread'], thrift: 0.35, lines: 0.2, peak: [11, 14] },
+  { id: 'aisha', name: 'Aisha', full: 'Aisha Rahman', character: 'crossingguard', tag: 'school crossing guard', look: { skin: '#a9703f', hair: '#241810', eyes: '#3a2414' }, height: 1.36, favorites: ['milk', 'eggs', 'cereal', 'bananas', 'apples'], thrift: 0.3, lines: 0.5, peak: [8, 9.5] },
+  { id: 'tomasz', name: 'Tomasz', full: 'Tomasz Kowalski', character: 'engineer', tag: 'site engineer', look: { skin: '#f6dcc8', hair: '#c8a45a', eyes: '#3a5a8a' }, height: 1.46, favorites: ['coffee', 'soda', 'deli', 'bread'], thrift: 0.4, lines: 0.3, peak: [7, 9] },
+  { id: 'camille', name: 'Camille', full: 'Camille Dubois', character: 'barista', tag: 'barista off shift', look: { skin: '#533018', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.38, favorites: ['coffee', 'yogurt', 'apples', 'lettuce', 'bread'], thrift: 0.35, lines: 0.35, peak: [14, 18] },
+  { id: 'zoe', name: 'Zoe', full: 'Zoe Tran', character: 'influencer', tag: 'wellness influencer', look: { skin: '#f0d0c0', hair: '#0e0a08', eyes: '#2a1a10' }, height: 1.4, favorites: ['yogurt', 'apples', 'water', 'lettuce', 'coffee'], thrift: 0.8, lines: 0.3, peak: [11, 17] },
+  { id: 'dmitri', name: 'Dmitri', full: 'Dmitri Volkov', character: 'foreman', tag: 'warehouse foreman', look: { skin: '#f6dcc8', hair: '#7a5230', eyes: '#6a6a2a' }, height: 1.46, favorites: ['beef', 'potatoes', 'eggs', 'bread'], thrift: 0.25, lines: 0.3, peak: [16, 20] },
 ];
 export const RESIDENT_BY_ID = Object.fromEntries(RESIDENTS.map((r) => [r.id, r]));
 
@@ -634,19 +603,6 @@ function weightedProduct(state, excluded = new Set(), favorites = NO_FAVORITES) 
   return pool[pool.length - 1];
 }
 
-/** Every shopper independently forms an opinion about the resident cats. */
-function rollCatEncounter(state, affinity = 0) {
-  const roll = state.random();
-  const cat = CAT_ROSTER[Math.floor(state.random() * CAT_ROSTER.length)];
-  // Cat people are charmed more often and bothered less; the rest the other way about.
-  const charmed = 0.25 + affinity, bothered = charmed + 0.2 - affinity * 0.5;
-  return {
-    catReaction: roll < charmed ? 'delighted' : roll < bothered ? 'annoyed' : 'indifferent',
-    catName: cat.name,
-    catId: cat.id,
-  };
-}
-
 /** What a resident comes in for: two or three lines, leaning toward their favorites. */
 export function buildBasket(state, resident) {
   const favorites = new Set(resident.favorites);
@@ -665,13 +621,15 @@ function spawnCustomer(state) {
   const diningSeats = CAFE_SEATS.filter((candidate) => candidate.style !== 'stool');
   if (state.customers.length >= Math.min(10, diningSeats.length)) return null;
   const occupiedSeats = new Set(state.customers.map((customer) => customer.seatId).filter(Boolean));
-  const seat = diningSeats.find((candidate) => !occupiedSeats.has(candidate.id));
+  // Guests spread out: take a free seat at the quietest table, so nobody shares a table while another sits empty.
+  const diners = (tableId) => diningSeats.filter((candidate) => candidate.tableId === tableId && occupiedSeats.has(candidate.id)).length;
+  const seat = diningSeats.filter((candidate) => !occupiedSeats.has(candidate.id))
+    .reduce((best, candidate) => (!best || diners(candidate.tableId) < diners(best.tableId) ? candidate : best), null);
   if (!seat) return null;
   const resident = chooseResident(state);
-  const catEncounter = rollCatEncounter(state, resident.cats);
   const menuChoices = CAFE_MENU.filter((item) => Object.keys(item.ingredients ?? {}).every((productId) => isAvailable(state, productId)));
   const menuChoice = menuChoices[Math.floor(state.random() * menuChoices.length)] ?? CAFE_MENU_BY_ID['scrambled-eggs'];
-  const browseTime = 12 + state.random() * 5 + (catEncounter.catReaction === 'delighted' ? 1.2 : catEncounter.catReaction === 'annoyed' ? -0.7 : 0);
+  const browseTime = 12 + state.random() * 5;
   const customer = {
     id: ++state.customerSequence,
     residentId: resident.id,
@@ -679,7 +637,6 @@ function spawnCustomer(state) {
     name: resident.name,
     reviewName: `${resident.full.split(' ')[0][0]}. ${resident.full.split(' ').slice(-1)[0]}`,
     tag: resident.tag,
-    ...catEncounter,
     menuChoiceId: menuChoice.id,
     orderedMenuId: null,
     orderTakenAt: null,
@@ -767,9 +724,7 @@ function awardStoreExperience(state, amount) {
   state.experience = Math.max(0, Math.floor((state.experience ?? 0) + amount));
   const level = getStoreLevel(state);
   if (level > previousLevel) {
-    pushEvent(state, 'level', `Store level up · Level ${level}!`, level >= PURCHASING_MANAGER.unlockLevel
-      ? 'Purchasing manager hiring is now unlocked in the Staff tab.'
-      : `Business experience ${state.experience} · keep serving the neighborhood to unlock new staff.`);
+    pushEvent(state, 'level', `Store level up · Level ${level}!`, `Business experience ${state.experience} · keep serving the neighborhood.`);
   }
 }
 
@@ -813,17 +768,6 @@ function checkoutCustomer(state, customer) {
     state.reputation = Math.min(100, state.reputation + 0.12);
     pushEvent(state, 'sale', `${customer.name} checked out.`, `${totalBought} units · ${money(customer.spend)} · ${basket.length} basket lines`);
   }
-  // A cat encounter affects the visit even if the shopper came for groceries.
-  // Food-safety complaints remain the dominant reputation event.
-  if (customer.catReaction === 'delighted') {
-    state.dayStats.catLoved = (state.dayStats.catLoved ?? 0) + 1;
-    if (!hadExpired) state.reputation = Math.min(100, state.reputation + 0.32);
-    pushEvent(state, 'cat', `${customer.name} stopped to see ${customer.catName}.`, 'A little purring, a little patience, and a happier customer.');
-  } else if (customer.catReaction === 'annoyed') {
-    state.dayStats.catAnnoyed = (state.dayStats.catAnnoyed ?? 0) + 1;
-    if (!hadExpired) state.reputation = Math.max(0, state.reputation - 0.48);
-    pushEvent(state, 'cat', `${customer.name} was bothered by ${customer.catName}.`, 'The cat got underfoot. Not every shopper wants a four-legged welcome.');
-  }
   const experienceEarned = customer.result === 'sold' ? 18 + Math.floor(customer.spend * 2)
     : customer.result === 'partial' ? 8 + Math.floor(customer.spend)
       : customer.result === 'expired' ? 2 : 5;
@@ -846,11 +790,10 @@ const CAFE_REVIEW_ITEM_NAMES = Object.freeze({
   orangejuice: 'fresh orange juice', bacon: 'bacon and eggs', sourcream: 'omelette topping',
 });
 
-function pickReviewText(state, bank, product, catName = 'the cafe cat') {
+function pickReviewText(state, bank, product) {
   const template = bank[Math.floor(state.random() * bank.length)];
   return template
-    .replaceAll('{{product}}', CAFE_REVIEW_ITEM_NAMES[product?.id] ?? product?.short?.toLowerCase() ?? 'breakfast')
-    .replaceAll('{{cat}}', catName);
+    .replaceAll('{{product}}', CAFE_REVIEW_ITEM_NAMES[product?.id] ?? product?.short?.toLowerCase() ?? 'breakfast');
 }
 
 const CAFE_QUALITY_REVIEW_BANK = Object.freeze({
@@ -932,28 +875,15 @@ export function maybeLeaveReview(state, customer) {
   if (customer.reviewLeft) return null;
   if (Number.isFinite(customer.foodQuality) && Number.isFinite(customer.serviceQuality)) return leaveCafeQualityReview(state, customer);
   const outcome = customer.result ?? 'sold';
-  const catReaction = customer.catReaction ?? 'indifferent';
-  // A cat rave needs a happy visit; a cat grumble needs a visit that got as far as the till.
-  const catReview = (catReaction === 'delighted' && outcome === 'sold')
-    || (catReaction === 'annoyed' && (outcome === 'sold' || outcome === 'partial'));
   const chance = outcome === 'expired' ? 0.9
-    : catReview ? (catReaction === 'annoyed' ? 0.48 : 0.34)
-      : outcome === 'stockout' || outcome === 'priced-out' ? 0.34
-        : outcome === 'partial' ? 0.28 : 0.11;
+    : outcome === 'stockout' || outcome === 'priced-out' ? 0.34
+      : outcome === 'partial' ? 0.28 : 0.11;
   if (state.random() >= chance) return null;
 
   let rating, bank, reviewOutcome = outcome;
   if (outcome === 'expired') {
     rating = state.random() < 0.78 ? 1 : 2;
     bank = REVIEW_BANK.expired;
-  } else if (catReview && catReaction === 'annoyed') {
-    rating = state.random() < 0.68 ? 2 : 3;
-    bank = REVIEW_BANK.catAnnoyed;
-    reviewOutcome = 'cat-annoyed';
-  } else if (catReview && catReaction === 'delighted') {
-    rating = state.random() < 0.72 ? 5 : 4;
-    bank = REVIEW_BANK.catLoved;
-    reviewOutcome = 'cat-loved';
   } else if (outcome === 'priced-out') {
     rating = state.random() < 0.5 ? 2 : 3;
     bank = REVIEW_BANK.pricey;
@@ -968,7 +898,7 @@ export function maybeLeaveReview(state, customer) {
     bank = REVIEW_BANK[rating === 5 ? 'five' : 'four'];
   }
   const product = PRODUCT_BY_ID[customer.expiredProductId ?? customer.stockoutProductId ?? customer.demandId];
-  const text = pickReviewText(state, bank, product, customer.catName);
+  const text = pickReviewText(state, bank, product);
   const review = {
     id: ++state.reviewSequence,
     name: customer.reviewName ?? customer.name,
@@ -979,7 +909,6 @@ export function maybeLeaveReview(state, customer) {
     source: state.random() < 0.22 ? 'Local guide' : 'Verified visit',
     outcome: reviewOutcome,
     productId: product?.id ?? null,
-    catName: catReview ? customer.catName : null,
   };
   state.reviews.unshift(review);
   state.reviews.length = Math.min(state.reviews.length, 48);
@@ -1049,8 +978,6 @@ function endDay(state) {
     revenue: Math.round(state.dayStats.revenue * 100) / 100,
     grossProfit: Math.round(state.dayStats.grossProfit * 100) / 100,
     customers: state.dayStats.customers,
-    catLoved: state.dayStats.catLoved ?? 0,
-    catAnnoyed: state.dayStats.catAnnoyed ?? 0,
     unitsSold: state.dayStats.unitsSold,
     complaints: state.dayStats.complaints,
     waste: Math.round(state.dayStats.waste * 100) / 100,
@@ -1082,9 +1009,8 @@ export function startNextDay(state) {
   state.customers = [];
   state.staffWork = { stage: 'idle', productId: null, timer: 0, duration: 0, moved: 0 };
   state.waiterWork = { stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 };
-  state.nextAutoOrderAt = DAY_OPEN + (state.purchasingManagerHired ? PURCHASING_MANAGER.firstReviewDelay : 35);
   state.nextArrival = DAY_OPEN + (12 + state.random() * 20) / trafficMultiplier(state);
-  state.dayStats = { revenue: 0, unitsSold: 0, customers: 0, complaints: 0, waste: 0, purchases: 0, grossProfit: 0, stockouts: 0, catLoved: 0, catAnnoyed: 0, foodQualityTotal: 0, serviceQualityTotal: 0, ordersServed: 0 };
+  state.dayStats = { revenue: 0, unitsSold: 0, customers: 0, complaints: 0, waste: 0, purchases: 0, grossProfit: 0, stockouts: 0, foodQualityTotal: 0, serviceQualityTotal: 0, ordersServed: 0 };
   pushEvent(state, 'note', `Day ${state.day} begins.`, 'Fresh start. Check the cold case before the rush.');
   return true;
 }
@@ -1107,68 +1033,6 @@ export function repayCredit(state, amount = state.debt) {
   state.debt = Math.round((state.debt - value) * 100) / 100;
   pushEvent(state, 'finance', `${money(value)} credit repaid.`, `Remaining balance: ${money(state.debt)}`);
   return { ok: true, amount: value, debt: state.debt };
-}
-
-export function hirePurchasingManager(state) {
-  if (state.purchasingManagerHired) return { ok: false, reason: 'already-hired' };
-  const level = getStoreLevel(state);
-  if (level < PURCHASING_MANAGER.unlockLevel) return { ok: false, reason: 'level-required', level, requiredLevel: PURCHASING_MANAGER.unlockLevel };
-  if (state.cash < PURCHASING_MANAGER.hireCost) return { ok: false, reason: 'insufficient-funds', required: PURCHASING_MANAGER.hireCost, cash: state.cash };
-  state.cash = Math.round((state.cash - PURCHASING_MANAGER.hireCost) * 100) / 100;
-  state.purchasingManagerHired = true;
-  state.automaticPurchasingEnabled = true;
-  state.dailyCosts.payroll = STAFF_PAYROLL + PURCHASING_MANAGER.wage;
-  state.nextAutoOrderAt = state.minute + PURCHASING_MANAGER.firstReviewDelay;
-  pushEvent(state, 'staff', `${PURCHASING_MANAGER.name} joined the team.`, `Hiring ${money(PURCHASING_MANAGER.hireCost)} · ${money(PURCHASING_MANAGER.wage)} daily wage · automatic ordering is enabled.`);
-  return { ok: true, cash: state.cash, wage: PURCHASING_MANAGER.wage, hireCost: PURCHASING_MANAGER.hireCost };
-}
-
-export function setAutomaticPurchasing(state, enabled) {
-  if (!state.purchasingManagerHired) return false;
-  state.automaticPurchasingEnabled = Boolean(enabled);
-  state.nextAutoOrderAt = state.minute + PURCHASING_MANAGER.firstReviewDelay;
-  pushEvent(state, 'staff', `Automatic purchasing ${state.automaticPurchasingEnabled ? 'enabled' : 'paused'}.`, state.automaticPurchasingEnabled ? 'Rafael will check stock coverage before placing a cash-funded order.' : 'Supplier orders are back under your direct control.');
-  return true;
-}
-
-function advancePurchasingManager(state) {
-  if (!state.purchasingManagerHired || !state.automaticPurchasingEnabled || state.minute < state.nextAutoOrderAt) return;
-  state.nextAutoOrderAt = state.minute + PURCHASING_MANAGER.reviewInterval;
-  const now = productNow(state);
-  const reserve = PURCHASING_MANAGER.cashReserve;
-  const options = availableProducts(state).map((product) => {
-    const shelf = qtyOf(state.shelves[product.id].filter((batch) => !isExpired(batch, now)));
-    const back = qtyOf(state.stockroom[product.id].filter((batch) => !isExpired(batch, now)));
-    const total = shelf + back;
-    const reorderPoint = Math.max(2, Math.ceil(product.demand * 3));
-    const target = Math.max(product.caseSize, Math.ceil(product.demand * 7));
-    const shortage = target - total;
-    if (total > reorderPoint || shortage <= 0) return null;
-    const cases = Math.min(2, Math.max(1, Math.ceil(shortage / product.caseSize)));
-    const cost = Math.round(product.cost * product.caseSize * cases * 100) / 100;
-    const urgency = (reorderPoint - total + 1) / reorderPoint;
-    const score = urgency * (0.7 + product.demand) + (shelf === 0 ? 0.45 : 0) + (product.shelfLife <= 7 ? 0.12 : 0);
-    return { product, cases, cost, total, target, score };
-  }).filter(Boolean).sort((a, b) => b.score - a.score || a.cost - b.cost);
-
-  let ordersPlaced = 0;
-  for (const choice of options) {
-    if (ordersPlaced >= PURCHASING_MANAGER.maxLinesPerReview) break;
-    // Rafael can use register cash above the operating reserve only; he never
-    // draws on the credit line or spends the protected buffer.
-    if (state.cash - choice.cost < reserve) continue;
-    const order = placeOrder(state, choice.product.id, choice.cases);
-    if (!order.ok) continue;
-    ordersPlaced += 1;
-    pushEvent(state, 'staff', `${PURCHASING_MANAGER.name} ordered ${choice.cases} case(s) of ${choice.product.short.toLowerCase()}.`, `${choice.total} usable units against a target of ${choice.target} · ${money(order.total)} paid from the register.`);
-  }
-
-  if (!ordersPlaced) {
-    const detail = options.length
-      ? `Low-stock lines were found, but available register cash could not cover an order while preserving the ${money(reserve)} operating reserve.`
-      : 'Shelf and backroom coverage are healthy; no supplier order is needed yet.';
-    pushEvent(state, 'staff', `${PURCHASING_MANAGER.name} completed a stock review.`, detail);
-  }
 }
 
 function cafeStaffQuality(id) {
@@ -1350,7 +1214,6 @@ export function advanceGame(state, deltaMinutes) {
     remaining -= step;
     advanceCustomerPhases(state, step);
     advanceWaiterService(state, step);
-    advancePurchasingManager(state);
     if (state.minute >= state.nextArrival && state.minute < LAST_CALL) {
       spawnCustomer(state);
       state.nextArrival = state.minute + customerArrivalInterval(state);

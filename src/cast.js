@@ -1,15 +1,13 @@
 /**
- * Every model Venture Cafe uses, by name: the staff, the owner, the cats, the
+ * Every model Venture Cafe uses, by name: the staff, the owner, the
  * residents (each their own person from the engine's cast, in their own skin,
  * hair and eyes) and the stock. The page and the bake worker both import this,
  * so a name means the same definition in both and a mesh baked in a worker can be
  * adopted on the page.
  */
 import { cloth, person } from 'madness-engine/characters/person';
-import { CAT_DEFS } from 'madness-engine/characters/cat';
 import { GROCERIES } from 'madness-engine/props/groceries';
 import gent from 'madness-engine/characters/gent';
-import purchasingSuit from 'madness-engine/characters/suit';
 import tourist from 'madness-engine/characters/tourist';
 import punk from 'madness-engine/characters/punk';
 import hippie from 'madness-engine/characters/hippie';
@@ -30,7 +28,7 @@ import barista from 'madness-engine/characters/barista';
 import waiter from 'madness-engine/characters/waiter';
 import influencer from 'madness-engine/characters/influencer';
 import foreman from 'madness-engine/characters/foreman';
-import { RESIDENTS, CAT_ROSTER } from './sim.js';
+import { RESIDENTS } from './sim.js';
 
 const BASES = { tourist, punk, hippie, artist, hipster, cabbie, nonna, beerguy, salaryman, pizzaiolo, skater, shopper, oldtimer, mailcarrier, crossingguard, engineer, barista, influencer, foreman };
 
@@ -71,24 +69,21 @@ export const CAST = {
   'staff:lou': gent,
   'staff:bob': barista,
   'staff:waiter': waiter,
-  'staff:rafael': purchasingSuit,
   owner: OWNER_CHARACTER,
   'prop:carton': GROCERIES.carton,
 };
-for (const cat of CAT_ROSTER) CAST[`cat:${cat.id}`] = CAT_DEFS[`cat-${cat.coat}`];
 for (const resident of RESIDENTS) CAST[`resident:${resident.id}`] = BASES[resident.character].variant({ ...resident.look, name: `resident-${resident.id}` });
 for (const [productId, prop] of Object.entries(PRODUCT_PROP)) CAST[`prop:${productId}`] = GROCERIES[prop];
 
 /** How finely each kind of model is baked: shelf stock and passers-by are small on screen, and a person takes seconds to sculpt. */
-export const DETAIL = { prop: 0.55, resident: 0.45, staff: 0.6, owner: 0.7, cat: 0.6 };
+export const DETAIL = { prop: 0.55, resident: 0.45, staff: 0.6, owner: 0.7 };
 export const detailOf = (name) => DETAIL[name.split(':')[0]] ?? 0.6;
 
 /** What is baked behind the loading screen; the rest of the residents are baked while the shop is open. */
 export const FIRST_WAVE = ['russo', 'walt', 'jules', 'priya'];
 export const loadingJobs = () => Object.keys(CAST)
   .filter((name) => !name.startsWith('resident:') || FIRST_WAVE.includes(name.slice(9)))
-  .filter((name) => name !== 'staff:rafael')
   .map((name) => [name, detailOf(name)]);
 export const backgroundJobs = () => Object.keys(CAST)
-  .filter((name) => (name.startsWith('resident:') && !FIRST_WAVE.includes(name.slice(9))) || name === 'staff:rafael')
+  .filter((name) => (name.startsWith('resident:') && !FIRST_WAVE.includes(name.slice(9))))
   .map((name) => [name, detailOf(name)]);

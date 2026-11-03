@@ -5,9 +5,10 @@ import {
   oldestShelfBatch, sellFromShelf, borrowCredit, repayCredit, advanceGame,
   beginDay, startNextDay, adjustPrice, PRODUCT_BY_ID, saveGameState, loadGameState,
   REVIEW_BANK, maybeLeaveReview, customerArrivalInterval, trafficLabel, reviewSummary,
-  RESIDENTS, RESIDENT_BY_ID, chooseResident, buildBasket, PURCHASING_MANAGER, getStoreLevel, getStoreLevelProgress, hirePurchasingManager, setAutomaticPurchasing, activeFrameDelta,
+  RESIDENTS, RESIDENT_BY_ID, STAFF, chooseResident, buildBasket, getStoreLevel, getStoreLevelProgress, activeFrameDelta,
 } from '../src/sim.js';
 
+import { CAFE_MENU_BY_ID } from '../src/menu.js';
 function prepareState() {
   const state = createGameState(7);
   state.started = true;
@@ -185,7 +186,7 @@ test('a restored open store advances customer movement and the business clock wi
   state.customers.push({
     id: 9991, character: 'artist', name: 'Maya', tag: 'visitor', demandId: 'apples',
     basket: [{ productId: 'apples', qty: 1 }], phase: 'browsing',
-    phaseTotal: 30, phaseTimer: 30, result: null, bought: 0, spend: 0,
+    phaseTotal: 30, phaseTimer: 30, result: null, bought: 0, spend: 0, serviceStatus: 'served',
   });
   const restored = loadGameState(saveGameState(state));
   assert.ok(restored);
@@ -290,91 +291,6 @@ test('older saves migrate to the review feed without losing their ledger', () =>
   assert.equal(loaded.reviewSequence, loaded.reviews[0].id);
 });
 
-test('customers roll independent opinions of the cats when they enter the bodega', () => {
-  const delighted = prepareState();
-  delighted.random = () => 0;
-  delighted.nextArrival = delighted.minute + 0.01;
-  advanceGame(delighted, 0.05);
-  assert.equal(delighted.customers[0].catReaction, 'delighted');
-  assert.equal(delighted.customers[0].catName, 'Blaze');
-  const middling = prepareState();
-  middling.random = () => 0.3;
-  middling.nextArrival = middling.minute + 0.01;
-  advanceGame(middling, 0.05);
-  const resident = RESIDENT_BY_ID[middling.customers[0].residentId];
-  // The same roll lands differently for a cat person and for someone who is not.
-  assert.equal(middling.customers[0].catReaction, 0.3 < 0.25 + resident.cats ? 'delighted' : 'annoyed');
-  assert.ok(middling.customers[0].catName);
-});
-
-test('cat encounters have a small direct effect on reputation and daily store stats', () => {
-  const delighted = prepareState();
-  const customer = {
-    id: 1101, character: 'tourist', name: 'Maya', tag: 'visitor', demandId: 'apples',
-    basket: [{ productId: 'apples', qty: 1 }], phase: 'browsing', phaseTotal: 0.04, phaseTimer: 0.04,
-    result: null, bought: 0, spend: 0, catReaction: 'delighted', catName: 'Jinx',
-  };
-  delighted.customers.push(customer);
-  delighted.nextArrival = 100000;
-  const beforeDelighted = delighted.reputation;
-  advanceGame(delighted, 0.05);
-  assert.equal(delighted.dayStats.catLoved, 1);
-  assert.ok(delighted.reputation > beforeDelighted);
-  assert.ok(delighted.events.some((event) => /stopped to see Jinx/.test(event.message)));
-
-  const annoyed = prepareState();
-  const annoyedCustomer = {
-    ...customer, id: 1102, name: 'Rico', catReaction: 'annoyed', catName: 'Nyx',
-    basket: [{ productId: 'apples', qty: 1 }], phase: 'browsing', phaseTotal: 0.04, phaseTimer: 0.04,
-  };
-  annoyed.customers.push(annoyedCustomer);
-  annoyed.nextArrival = 100000;
-  const beforeAnnoyed = annoyed.reputation;
-  advanceGame(annoyed, 0.05);
-  assert.equal(annoyed.dayStats.catAnnoyed, 1);
-  assert.ok(annoyed.reputation < beforeAnnoyed);
-  assert.ok(annoyed.events.some((event) => /bothered by Nyx/.test(event.message)));
-});
-
-test('cat lovers and cat-averse customers can publish distinct public reviews', () => {
-  assert.ok(REVIEW_BANK.catLoved.length >= 8);
-  assert.ok(REVIEW_BANK.catAnnoyed.length >= 8);
-  const loved = prepareState();
-  loved.random = () => 0;
-  const positive = maybeLeaveReview(loved, {
-    id: 1201, name: 'Maya', result: 'sold', demandId: 'bread', catReaction: 'delighted', catName: 'Jinx',
-  });
-  assert.equal(positive.rating, 5);
-  assert.equal(positive.outcome, 'cat-loved');
-  assert.match(positive.text, /Jinx/);
-  const annoyed = prepareState();
-  annoyed.random = () => 0;
-  const negative = maybeLeaveReview(annoyed, {
-    id: 1202, name: 'Rico', result: 'sold', demandId: 'milk', catReaction: 'annoyed', catName: 'Nyx',
-  });
-  assert.equal(negative.rating, 2);
-  assert.equal(negative.outcome, 'cat-annoyed');
-  assert.match(negative.text, /Nyx/);
-});
-
-test('cat preferences survive saving and older saves gain safe reaction counters', () => {
-  const state = prepareState();
-  state.dayStats.catLoved = 3;
-  state.dayStats.catAnnoyed = 2;
-  state.customers.push({ id: 1301, name: 'Maya', catReaction: 'delighted', catName: 'Blaze' });
-  const restored = loadGameState(saveGameState(state));
-  assert.equal(restored.dayStats.catLoved, 3);
-  assert.equal(restored.dayStats.catAnnoyed, 2);
-  assert.equal(restored.customers[0].catReaction, 'delighted');
-  assert.equal(restored.customers[0].catName, 'Blaze');
-  const legacy = JSON.parse(saveGameState(state));
-  delete legacy.dayStats.catLoved;
-  delete legacy.dayStats.catAnnoyed;
-  const migrated = loadGameState(legacy);
-  assert.equal(migrated.dayStats.catLoved, 0);
-  assert.equal(migrated.dayStats.catAnnoyed, 0);
-});
-
 test('a requested quantity that exceeds shelf stock is counted as a partial basket and stockout', () => {
   const state = prepareState();
   state.shelves.apples = [{ lotId: 50001, qty: 2, receivedAt: productNow(state), expiresAt: productNow(state) + 5, unitCost: PRODUCT_BY_ID.apples.cost }];
@@ -391,33 +307,20 @@ test('a requested quantity that exceeds shelf stock is counted as a partial bask
   assert.ok(state.events.some((event) => /only get 2 of 4 apples/.test(event.message)));
 });
 
-test('food-safety reviews take precedence when the same visit also has a cat encounter', () => {
+test('expired stock draws a one-star food-safety review', () => {
   const state = prepareState();
   state.random = () => 0;
   const before = state.reputation;
   const review = maybeLeaveReview(state, {
     id: 1501, name: 'Mrs. Russo', result: 'expired', expiredProductId: 'milk', demandId: 'milk',
-    catReaction: 'annoyed', catName: 'Nyx',
   });
   assert.equal(review.outcome, 'expired');
   assert.equal(review.rating, 1);
   assert.match(review.text, /house coffee/i);
-  assert.doesNotMatch(review.text, /Nyx/);
   assert.ok(state.reputation < before);
 });
 
 
-
-test('purchasing manager stays locked until the store reaches Level 5', () => {
-  const state = prepareState();
-  const result = hirePurchasingManager(state);
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, 'level-required');
-  assert.equal(result.requiredLevel, 5);
-  state.experience = 999;
-  assert.equal(getStoreLevel(state), 4);
-  assert.equal(hirePurchasingManager(state).reason, 'level-required');
-});
 
 test('store experience unlocks Level 5 and the experience bar reports progress', () => {
   const state = createGameState(77);
@@ -429,92 +332,14 @@ test('store experience unlocks Level 5 and the experience bar reports progress',
   assert.equal(getStoreLevelProgress(state).progress, 0);
 });
 
-test('hiring Rafael charges the recruitment cost and adds his daily wage to payroll', () => {
-  const state = prepareState();
-  state.experience = 1000;
-  state.cash = 800;
-  const before = state.cash;
-  const result = hirePurchasingManager(state);
-  assert.equal(result.ok, true);
-  assert.equal(result.hireCost, PURCHASING_MANAGER.hireCost);
-  assert.equal(state.cash, before - PURCHASING_MANAGER.hireCost);
-  assert.equal(state.purchasingManagerHired, true);
-  assert.equal(state.automaticPurchasingEnabled, true);
-  assert.equal(state.dailyCosts.payroll, 59);
-  assert.equal(hirePurchasingManager(state).reason, 'already-hired');
-});
-
-test('Rafael starts monitoring quickly and orders multiple low-stock lines without using credit', () => {
-  const state = prepareState();
-  state.experience = 1000;
-  state.cash = 900;
-  assert.equal(hirePurchasingManager(state).ok, true);
-  assert.equal(state.nextAutoOrderAt, state.minute + PURCHASING_MANAGER.firstReviewDelay);
-  for (const id of ['bananas', 'milk', 'water', 'bread']) {
-    state.shelves[id] = [];
-    state.stockroom[id] = [];
-  }
-  const cashBeforeOrder = state.cash;
-  const debtBeforeOrder = state.debt;
-  state.nextAutoOrderAt = state.minute;
-  advanceGame(state, 0.2);
-  const orderEvents = state.events.filter((event) => event.type === 'staff' && /Rafael Ortiz ordered/.test(event.message));
-  assert.equal(orderEvents.length, PURCHASING_MANAGER.maxLinesPerReview);
-  for (const id of ['bananas', 'milk', 'water', 'bread']) {
-    const received = state.stockroom[id].reduce((sum, batch) => sum + batch.qty, 0);
-    assert.ok(received >= 0);
-  }
-  assert.ok(state.cash < cashBeforeOrder);
-  assert.ok(state.cash >= PURCHASING_MANAGER.cashReserve);
-  assert.equal(state.debt, debtBeforeOrder);
-  assert.equal(state.nextAutoOrderAt, state.minute + PURCHASING_MANAGER.reviewInterval);
-});
-
-test('Rafael does not order before a review is due', () => {
-  const state = prepareState();
-  state.experience = 1000;
-  state.cash = 900;
-  assert.equal(hirePurchasingManager(state).ok, true);
-  state.shelves.bananas = [];
-  state.stockroom.bananas = [];
-  const before = state.cash;
-  advanceGame(state, PURCHASING_MANAGER.firstReviewDelay - 0.1);
-  assert.equal(state.cash, before);
-  advanceGame(state, 0.2);
-  assert.ok(state.cash < before);
-});
-
-test('Rafael protects the cash reserve and can pause automatic purchasing', () => {
-  const state = prepareState();
-  state.experience = 1000;
-  state.cash = 900;
-  assert.equal(hirePurchasingManager(state).ok, true);
-  state.shelves.milk = [];
-  state.stockroom.milk = [];
-  state.cash = PURCHASING_MANAGER.cashReserve + 1;
-  const cashAtReserve = state.cash;
-  state.nextAutoOrderAt = state.minute;
-  advanceGame(state, 0.2);
-  assert.equal(state.stockroom.milk.reduce((sum, batch) => sum + batch.qty, 0), 0);
-  assert.equal(state.cash, cashAtReserve);
-  assert.equal(state.debt, 0);
-  assert.equal(setAutomaticPurchasing(state, false), true);
-  assert.equal(state.automaticPurchasingEnabled, false);
-  assert.ok(state.events.some((event) => event.type === 'staff' && /Automatic purchasing paused/.test(event.message)));
-});
-
-test('player position, store level and manager status survive saving and migration', () => {
+test('player position and store level survive saving and migration', () => {
   const state = prepareState();
   state.playerPosition = { x: -2.4, z: 1.8 };
   state.experience = 725;
-  state.purchasingManagerHired = true;
-  state.automaticPurchasingEnabled = false;
   const restored = loadGameState(saveGameState(state));
   assert.deepEqual(restored.playerPosition, { x: -2.4, z: 1.8 });
   assert.equal(restored.experience, 725);
-  assert.equal(restored.purchasingManagerHired, true);
-  assert.equal(restored.automaticPurchasingEnabled, false);
-  assert.equal(restored.dailyCosts.payroll, 59);
+  assert.equal(restored.dailyCosts.payroll, STAFF.reduce((n, person) => n + person.wage, 0));
 });
 
 test('the resident cast is a varied neighborhood with valid habits', () => {
@@ -539,8 +364,7 @@ test('residents buy what they like, never two of them are inside at once, and ar
     const customer = spawnForTest(state);
     seen.set(customer.residentId, (seen.get(customer.residentId) ?? 0) + 1);
     const resident = RESIDENT_BY_ID[customer.residentId];
-    assert.ok(customer.basket.length >= 2 && customer.basket.length <= 3);
-    assert.equal(new Set(customer.basket.map((l) => l.productId)).size, customer.basket.length);
+    assert.ok(CAFE_MENU_BY_ID[customer.menuChoiceId], 'every diner has a dish in mind');
     assert.equal(customer.character, resident.character);
   }
   assert.ok(seen.size >= 14, `${seen.size} different residents in 300 visits`);
@@ -566,16 +390,17 @@ function spawnForTest(state) {
   return state.customers[before] ?? state.customers.at(-1);
 }
 
-test('shoppers want what is on their list even when the shelf is empty, so a bare shelf costs sales', () => {
+test('diners still order when the kitchen is bare, and the missing ingredients cost them food quality', () => {
   const state = prepareState();
   for (const p of PRODUCTS) { state.shelves[p.id] = []; state.stockroom[p.id] = []; }
   state.random = (() => { let v = 11; return () => { v = (v * 16807) % 2147483647; return v / 2147483647; }; })();
   state.minute = 8 * 60;
   const c = spawnForTest(state);
   assert.ok(c, 'a customer still comes in to an empty store');
-  assert.ok(c.basket.length >= 2);
+  assert.ok(CAFE_MENU_BY_ID[c.menuChoiceId], 'they still pick a dish');
   advanceGame(state, 40);
-  assert.ok(state.dayStats.stockouts >= 1, 'their empty-shelf lines were recorded as stockouts');
+  assert.ok(state.events.some((event) => event.type === 'warning' && /short on ingredients/.test(event.message)), 'the kitchen reported the missing ingredients');
+  assert.ok(state.dayStats.foodQualityTotal / Math.max(1, state.dayStats.ordersServed) < 70, 'a bare kitchen turns out poor meals');
 });
 
 test('a price past what a shopper will pay is put back, and the store hears about it', () => {
@@ -640,15 +465,6 @@ test('repaying credit works to the cent', () => {
   assert.equal(state.debt, 0);
 });
 
-test('a delighted cat lover who found nothing does not post a cat rave', () => {
-  const state = prepareState();
-  state.random = () => 0;
-  const review = maybeLeaveReview(state, { id: 7001, name: 'Zoe', result: 'stockout', demandId: 'milk', stockoutProductId: 'milk', catReaction: 'delighted', catName: 'Jinx' });
-  assert.ok(review);
-  assert.equal(review.outcome, 'stockout');
-  assert.ok(review.rating <= 3);
-});
-
 test('the range is in three tiers by store level, and the new lines also need their fixture bought', async () => {
   const { TIERS, FIXTURES, isAvailable, availableProducts, buyFixture, fixtureBlock, getStoreLevel } = await import('../src/sim.js');
   assert.deepEqual(TIERS.map((t) => t.tier), [1, 2, 3]);
@@ -658,7 +474,7 @@ test('the range is in three tiers by store level, and the new lines also need th
   assert.ok(tierOf(2).some((p) => !p.fixture), 'some established lines open at tier 2');
   assert.ok(tierOf(1).every((p) => !p.fixture), 'tier 1 needs nothing bought');
   assert.deepEqual(availableProducts(state).map((p) => p.id), tierOf(1).map((p) => p.id));
-  assert.equal(placeOrder(state, 'tomatoes', 1).reason, 'not-stocked');
+  assert.equal(placeOrder(state, 'yogurt', 1).reason, 'not-stocked');
   assert.equal(placeOrder(state, 'oranges', 1).reason, 'not-stocked');
 
   // A fixture waits for the level that opens its tier, then for the cash.
@@ -667,7 +483,7 @@ test('the range is in three tiers by store level, and the new lines also need th
   assert.equal(buyFixture(state, 'bin-1').reason, 'level-too-low');
   state.experience = 500;
   assert.equal(getStoreLevel(state), 3);
-  assert.ok(isAvailable(state, PRODUCT_BY_ID.tomatoes), 'an established tier 2 line opens with the level');
+  assert.ok(isAvailable(state, PRODUCT_BY_ID.yogurt), 'an established tier 2 line opens with the level');
   assert.ok(!isAvailable(state, PRODUCT_BY_ID.oranges), 'a new line still needs its bin');
   state.cash = 10;
   assert.equal(buyFixture(state, 'bin-1').reason, 'insufficient-funds');
@@ -755,4 +571,26 @@ test('new public reviews score the meal and the service separately', () => {
   assert.equal(weak.rating, 1);
   assert.equal(weak.outcome, 'poor');
   assert.match(weak.text, /disappointing|missed the mark|not good/i);
+});
+
+test('guests spread across tables, and each diner has a place setting on the table in front of their own seat', async () => {
+  const { CAFE_SEATS, CAFE_TABLES, CAFE_PLACE_SETTINGS } = await import('../src/layout.js');
+  const state = prepareState();
+  state.started = true;
+  state.paused = false;
+  const tableOf = (customer) => CAFE_SEATS.find((seat) => seat.id === customer.seatId).tableId;
+  for (let i = 0; i < 400 && state.customers.length < 3; i++) advanceGame(state, 0.25);
+  assert.ok(state.customers.length >= 2, 'several guests arrived');
+  const first = state.customers.slice(0, Math.min(state.customers.length, 3));
+  assert.equal(new Set(first.map(tableOf)).size, first.length, 'nobody shares a table while another sits empty');
+  const seen = new Set();
+  for (const place of CAFE_PLACE_SETTINGS) {
+    assert.ok(!seen.has(`${place.x},${place.z}`), `${place.seatId} has its own place`);
+    seen.add(`${place.x},${place.z}`);
+    const table = CAFE_TABLES.find((t) => t.id === place.tableId);
+    if (table) {
+      assert.ok(Math.abs(place.x - table.x) < table.w / 2 && Math.abs(place.z - table.z) < table.d / 2, `${place.seatId} is set on its table`);
+      assert.notEqual(place.x, table.x, 'not in the middle of the table');
+    }
+  }
 });
