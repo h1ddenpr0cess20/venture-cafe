@@ -1,0 +1,25 @@
+{
+  "name": "venture-cafe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A neighborhood breakfast cafe management game built on Madness Engine.",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "madness-engine": "github:h1ddenpr0cess20/madness-engine#73f4f13f514c28521785974e6de8bf413c6c9800",
+    "@fontsource/caveat": "^5.3.0",
+    "@fontsource/oswald": "^5.3.0",
+    "@fontsource/playfair-display": "^5.3.0"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
