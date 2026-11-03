@@ -8,12 +8,12 @@ import { floorTexture, wallTexture } from 'madness-engine/textures/venue';
 import { paintRoom } from 'madness-engine/textures/rooms/town';
 import { paintSky } from 'madness-engine/textures/skies/haze';
 import { screenMovementToWorld, startsCameraDrag, holdsCameraDrag, endsCameraDrag } from './controls.js';
-import { CAT_ROSTER, STAFF, RESIDENTS, RESIDENT_BY_ID, activeFrameDelta } from './sim.js';
+import { STAFF, RESIDENTS, RESIDENT_BY_ID, activeFrameDelta } from './sim.js';
 import {
   SHELL, FRONT_DOOR, REAR_DOOR, BACKROOM, SIDEWALK, LEVELS, GONDOLA, COOLER_LEVELS, COOLER_HEIGHT, BAKERY_TOP, COUNTER,
-  BACKBAR, SLOTS, DOOR_IN, SIDEWALK_SPAWN, SIDEWALK_EXITS, CHECKOUT, LOU_HOME, BOB_HOME, WAITER_HOME, KITCHEN_PASS, MANAGER_HOME, PLAYER_HOME,
+  BACKBAR, SLOTS, DOOR_IN, SIDEWALK_SPAWN, SIDEWALK_EXITS, CHECKOUT, LOU_HOME, BOB_HOME, WAITER_HOME, KITCHEN_PASS, PLAYER_HOME,
   GONDOLA_2_BOARDS, BIN_SIZE, PIECES, PIECE_BY_ID, pieceOfProduct, isStanding, placementOf, setLayout, footprint, snapPlacement, placementProblem,
-  CAT_PATROLS, navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS, CAFE_SERVICE_STOPS,
+  navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS, CAFE_SERVICE_STOPS,
 } from './layout.js';
 import { wallOpacity, easeOpacity, WALL_MODES } from './walls.js';
 import { CAST, DETAIL, loadingJobs, backgroundJobs, FIRST_WAVE } from './cast.js';
@@ -23,7 +23,6 @@ import { createBreakfastPlate } from './cafe-food.js';
 
 const PLAYER_SPEED = 2.25;
 const HUMAN_HEIGHT = 1.42;
-const CAT_HEIGHT = 0.31;
 const BRICK_TILE = 2.25;                       // world units a brick texture tile covers
 const STORE_CENTER = [0, 0];
 
@@ -480,7 +479,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   // The former stockroom carton stack is removed; the cafe kitchen now has a prep station and a tidy dry store.
 
   // ——— people ———
-  onProgress('Bringing in the staff and the venture-cafe cats', 86);
+  onProgress('Bringing in the staff', 86);
   const lou = createModel(GFX, CAST['staff:lou'], { detail: DETAIL.staff });
   const louFloor = normalizeActorHeight(lou, HUMAN_HEIGHT);
   const louHome = [LOU_HOME[0], louFloor, LOU_HOME[2]];
@@ -558,33 +557,6 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     button.addEventListener('contextmenu', (event) => event.preventDefault());
   });
 
-  // The purchasing manager joins at the receiving desk once hired; his model bakes in the background until then.
-  let manager = null;
-  const managerTag = makeTag('RAFAEL · BUYING', tagStyle('#d3b77d', 320), 24);
-  managerTag.visible = false;
-  function ensureManager() {
-    if (manager) return manager;
-    const model = createModel(GFX, CAST['staff:rafael'], { detail: DETAIL.staff });
-    const floor = normalizeActorHeight(model, HUMAN_HEIGHT);
-    model.group.position.set(MANAGER_HOME[0], floor, MANAGER_HOME[2]);
-    model.group.rotation.y = Math.PI;
-    scene.add(model.group);
-    manager = { model, floor, time: 0, poseAccumulator: 0 };
-    return manager;
-  }
-
-  const cats = CAT_ROSTER.map((cat, index) => {
-    const model = createModel(GFX, CAST[`cat:${cat.id}`], { detail: DETAIL.cat });
-    const floor = normalizeActorHeight(model, CAT_HEIGHT);
-    const stops = CAT_PATROLS[index].map(([x, z]) => [x, 0, z]);
-    const place = [stops[0][0], floor, stops[0][2]];
-    model.group.position.set(...place);
-    model.group.rotation.y = index * 1.5;
-    scene.add(model.group);
-    const route = planWalkRoute([place[0], 0, place[2]], stops.slice(1));
-    return { ...cat, model, place, time: index * 3.7, route, distance: 0, wait: 0.4 + index * 0.55, poseAccumulator: 0, patrolStops: stops, patrolIndex: 0 };
-  });
-
   // ——— customers: residents walk in off the sidewalk, shop, queue at the counter and leave ———
   const customerActors = new Map();
   const readyResidents = new Set(FIRST_WAVE);
@@ -622,17 +594,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     const start = [SIDEWALK_SPAWN[0] + (customer.id % 3) * 0.5 - 0.5, 0, SIDEWALK_SPAWN[2]];
     model.group.position.set(start[0], floor, start[2]);
     scene.add(model.group);
-    let catBadge = null;
-    if (customer.catReaction === 'delighted' || customer.catReaction === 'annoyed') {
-      const delighted = customer.catReaction === 'delighted';
-      catBadge = new GFX.Mesh(
-        new GFX.PlaneGeometry(0.34, 0.34),
-        new GFX.MeshBasicMaterial({ map: makeSignTexture(delighted ? '♥' : '!', { background: delighted ? '#315b45' : '#8e4b3d', foreground: '#fff5de', accent: delighted ? '#9ac08a' : '#e2a17f', width: 128, height: 128, fontSize: 76 }), transparent: true, side: GFX.DoubleSide, depthTest: false, depthWrite: false }),
-      );
-      catBadge.renderOrder = 20;
-      scene.add(catBadge);
-    }
-    const actor = { model, id: customer.id, catBadge, phase: null, route: [start], routeFraction: 0.6, time: customer.id * 0.7, poseAccumulator: 0, poseClip: 'idle', seatedAt: null, floor, start };
+    const actor = { model, id: customer.id, phase: null, route: [start], routeFraction: 0.6, time: customer.id * 0.7, poseAccumulator: 0, poseClip: 'idle', seatedAt: null, floor, start };
     customerActors.set(customer.id, actor);
     setCustomerRoute(actor, customer);
     // Someone restored mid-shop starts where their clock says they should be, not out on the street.
@@ -641,12 +603,6 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
 
   function disposeActor(actor) {
     scene.remove(actor.model.group);
-    if (actor.catBadge) {
-      scene.remove(actor.catBadge);
-      actor.catBadge.geometry.dispose();
-      actor.catBadge.material.map?.dispose();
-      actor.catBadge.material.dispose();
-    }
     actor.model.mesh.geometry.dispose();
   }
 
@@ -671,11 +627,6 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
       if (progress < 1) faceAlong(actor.model.group, point, ahead);
       else if (seated && actor.seat) actor.model.group.rotation.y = actor.seat.yaw;
       else if (customer.phase === 'checkout') actor.model.group.rotation.y = Math.PI / 2;
-      if (actor.catBadge) {
-        actor.catBadge.position.set(point[0], actor.floor + 1.72, point[2]);
-        actor.catBadge.quaternion.copy(stage.camera.quaternion);
-        actor.catBadge.visible = customer.phase !== 'leaving';
-      }
       actor.time += dt;
       actor.poseAccumulator += dt;
       if (actor.poseAccumulator >= 0.05) {
@@ -760,40 +711,6 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     }
   }
 
-  function updateCats(dt) {
-    for (const cat of cats) {
-      cat.time += dt;
-      cat.poseAccumulator = (cat.poseAccumulator ?? 0) + dt;
-      const total = routeLength(cat.route);
-      if (cat.wait > 0) {
-        cat.wait -= dt;
-        if (cat.poseAccumulator >= 0.08) {
-          cat.model.pose({ clip: cat.wait > 1.2 ? 'sit' : 'look', t: cat.time, time: cat.time, seed: cat.time * 0.1, pace: 0.7 });
-          cat.poseAccumulator %= 0.08;
-        }
-        continue;
-      }
-      cat.distance += dt * (cat.id === 'nyx' ? 0.52 : 0.62);
-      const progress = total > 0 ? cat.distance / total : 1;
-      if (progress >= 1) {
-        cat.patrolIndex = (cat.patrolIndex + 1) % cat.patrolStops.length;
-        const current = [cat.model.group.position.x, 0, cat.model.group.position.z];
-        cat.route = findWalkPath(current, cat.patrolStops[cat.patrolIndex]);
-        cat.distance = 0;
-        cat.wait = 1.8 + ((cat.patrolIndex + cat.id.length) % 4) * 0.65;
-        continue;
-      }
-      const point = pointOnRoute(cat.route, progress);
-      const ahead = pointOnRoute(cat.route, Math.min(1, progress + 0.025));
-      cat.model.group.position.set(point[0], cat.place[1], point[2]);
-      faceAlong(cat.model.group, point, ahead);
-      if (cat.poseAccumulator >= 0.05) {
-        cat.model.pose({ clip: 'walk', t: cat.time, time: cat.time, seed: cat.id.length, pace: 0.8 });
-        cat.poseAccumulator %= 0.05;
-      }
-    }
-  }
-
   let fixtureKey = '';
   function syncFixtures(state) {
     const owned = state.fixtures ?? [], layout = state.layout ?? {};
@@ -850,22 +767,6 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     state.playerPosition = { x: player.x, z: player.z };
   }
 
-  function updatePurchasingManager(state, dt) {
-    const hired = Boolean(state.purchasingManagerHired);
-    managerTag.visible = hired;
-    if (!hired) { if (manager) manager.model.group.visible = false; return; }
-    const m = ensureManager();
-    m.model.group.visible = true;
-    m.time += dt;
-    m.poseAccumulator += dt;
-    if (m.poseAccumulator >= 0.05) {
-      m.model.pose({ clip: 'idle', t: m.time, time: m.time, seed: 43 });
-      m.poseAccumulator %= 0.05;
-    }
-    managerTag.position.set(MANAGER_HOME[0], m.floor + 1.56, MANAGER_HOME[2]);
-    managerTag.quaternion.copy(stage.camera.quaternion);
-  }
-
   // The street door opens for anyone coming or going.
   let doorAngle = 0;
   function updateDoor(dt) {
@@ -900,9 +801,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     syncCustomers(state, actorDt);
     updateStaff(state, actorDt);
     updateWaiter(state, actorDt * 1.65);
-    updateCats(actorDt);
     updatePlayer(state, dt);
-    updatePurchasingManager(state, actorDt);
     updateDoor(dt);
     updateWalls(dt);
     stage.target.set(world.focus?.[0] ?? 0, 0.5, world.focus?.[1] ?? 0.8);
@@ -1079,7 +978,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   library.preload(background);
 
   const world = {
-    stage, scene, cats, staffModels, player, displayGroups, update, wallGroups, placement: placementApi, pieceAt: (x, y) => ({ piece: pieceAtPointer({ clientX: x, clientY: y }), floor: floorAt({ clientX: x, clientY: y }) }), selection: { get id() { return selection.id; }, select: (id) => setSelected(id, { notify: false }), set onSelect(fn) { selection.onSelect = fn; }, set onPickUp(fn) { selection.onPickUp = fn; } },
+    stage, scene, staffModels, player, displayGroups, update, wallGroups, placement: placementApi, pieceAt: (x, y) => ({ piece: pieceAtPointer({ clientX: x, clientY: y }), floor: floorAt({ clientX: x, clientY: y }) }), selection: { get id() { return selection.id; }, select: (id) => setSelected(id, { notify: false }), set onSelect(fn) { selection.onSelect = fn; }, set onPickUp(fn) { selection.onPickUp = fn; } },
     get wallMode() { return wallMode; },
     setWallMode(mode) { if (WALL_MODES.includes(mode)) wallMode = mode; return wallMode; },
     cycleWallMode() { wallMode = WALL_MODES[(WALL_MODES.indexOf(wallMode) + 1) % WALL_MODES.length]; return wallMode; },

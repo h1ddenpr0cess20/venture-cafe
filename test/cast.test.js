@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CAST, PRODUCT_PROP, DETAIL, detailOf, loadingJobs, backgroundJobs, FIRST_WAVE } from '../src/cast.js';
-import { PRODUCTS, RESIDENTS, CAT_ROSTER, STAFF } from '../src/sim.js';
+import { PRODUCTS, RESIDENTS, STAFF } from '../src/sim.js';
 import tourist from 'madness-engine/characters/tourist';
 import barista from 'madness-engine/characters/barista';
 import waiter from 'madness-engine/characters/waiter';
@@ -20,8 +20,7 @@ test('every product on the shelf is an engine prop, and every resident is a pers
     defs.add(def);
   }
   assert.equal(defs.size, RESIDENTS.length, 'no two residents share a model');
-  for (const cat of CAT_ROSTER) assert.ok(CAST[`cat:${cat.id}`], cat.id);
-  for (const name of ['staff:lou', 'staff:bob', 'staff:waiter', 'staff:rafael', 'owner']) assert.ok(CAST[name], name);
+  for (const name of ['staff:lou', 'staff:bob', 'staff:waiter', 'owner']) assert.ok(CAST[name], name);
   assert.equal(CAST['staff:bob'], barista, 'Bob uses the Madness Engine male barista character');
   assert.equal(CAST['staff:waiter'], waiter, 'table service uses the Madness Engine Waiter character');
   assert.ok(STAFF.some((person) => person.id === 'waiter' && person.character === 'waiter'));
@@ -40,7 +39,6 @@ test('the models baked behind the loading screen and in the background cover the
   assert.deepEqual(first.filter((n) => later.includes(n)), [], 'nothing is baked twice');
   assert.deepEqual([...first, ...later].sort(), Object.keys(CAST).sort(), 'everything is baked');
   for (const id of FIRST_WAVE) assert.ok(first.includes(`resident:${id}`), `${id} is in the first wave`);
-  assert.ok(later.includes('staff:rafael'), 'the purchasing manager bakes in the background until he is hired');
   for (const [name, detail] of [...loadingJobs(), ...backgroundJobs()]) assert.equal(detail, detailOf(name));
   assert.ok(DETAIL.prop < 1 && DETAIL.resident < 1);
 });

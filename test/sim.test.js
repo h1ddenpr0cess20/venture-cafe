@@ -5,7 +5,7 @@ import {
   oldestShelfBatch, sellFromShelf, borrowCredit, repayCredit, advanceGame,
   beginDay, startNextDay, adjustPrice, PRODUCT_BY_ID, saveGameState, loadGameState,
   REVIEW_BANK, maybeLeaveReview, customerArrivalInterval, trafficLabel, reviewSummary,
-  RESIDENTS, RESIDENT_BY_ID, chooseResident, buildBasket, PURCHASING_MANAGER, getStoreLevel, getStoreLevelProgress, hirePurchasingManager, setAutomaticPurchasing, activeFrameDelta,
+  RESIDENTS, RESIDENT_BY_ID, STAFF, chooseResident, buildBasket, getStoreLevel, getStoreLevelProgress, activeFrameDelta,
 } from '../src/sim.js';
 
 function prepareState() {
@@ -290,91 +290,6 @@ test('older saves migrate to the review feed without losing their ledger', () =>
   assert.equal(loaded.reviewSequence, loaded.reviews[0].id);
 });
 
-test('customers roll independent opinions of the cats when they enter the bodega', () => {
-  const delighted = prepareState();
-  delighted.random = () => 0;
-  delighted.nextArrival = delighted.minute + 0.01;
-  advanceGame(delighted, 0.05);
-  assert.equal(delighted.customers[0].catReaction, 'delighted');
-  assert.equal(delighted.customers[0].catName, 'Blaze');
-  const middling = prepareState();
-  middling.random = () => 0.3;
-  middling.nextArrival = middling.minute + 0.01;
-  advanceGame(middling, 0.05);
-  const resident = RESIDENT_BY_ID[middling.customers[0].residentId];
-  // The same roll lands differently for a cat person and for someone who is not.
-  assert.equal(middling.customers[0].catReaction, 0.3 < 0.25 + resident.cats ? 'delighted' : 'annoyed');
-  assert.ok(middling.customers[0].catName);
-});
-
-test('cat encounters have a small direct effect on reputation and daily store stats', () => {
-  const delighted = prepareState();
-  const customer = {
-    id: 1101, character: 'tourist', name: 'Maya', tag: 'visitor', demandId: 'apples',
-    basket: [{ productId: 'apples', qty: 1 }], phase: 'browsing', phaseTotal: 0.04, phaseTimer: 0.04,
-    result: null, bought: 0, spend: 0, catReaction: 'delighted', catName: 'Jinx',
-  };
-  delighted.customers.push(customer);
-  delighted.nextArrival = 100000;
-  const beforeDelighted = delighted.reputation;
-  advanceGame(delighted, 0.05);
-  assert.equal(delighted.dayStats.catLoved, 1);
-  assert.ok(delighted.reputation > beforeDelighted);
-  assert.ok(delighted.events.some((event) => /stopped to see Jinx/.test(event.message)));
-
-  const annoyed = prepareState();
-  const annoyedCustomer = {
-    ...customer, id: 1102, name: 'Rico', catReaction: 'annoyed', catName: 'Nyx',
-    basket: [{ productId: 'apples', qty: 1 }], phase: 'browsing', phaseTotal: 0.04, phaseTimer: 0.04,
-  };
-  annoyed.customers.push(annoyedCustomer);
-  annoyed.nextArrival = 100000;
-  const beforeAnnoyed = annoyed.reputation;
-  advanceGame(annoyed, 0.05);
-  assert.equal(annoyed.dayStats.catAnnoyed, 1);
-  assert.ok(annoyed.reputation < beforeAnnoyed);
-  assert.ok(annoyed.events.some((event) => /bothered by Nyx/.test(event.message)));
-});
-
-test('cat lovers and cat-averse customers can publish distinct public reviews', () => {
-  assert.ok(REVIEW_BANK.catLoved.length >= 8);
-  assert.ok(REVIEW_BANK.catAnnoyed.length >= 8);
-  const loved = prepareState();
-  loved.random = () => 0;
-  const positive = maybeLeaveReview(loved, {
-    id: 1201, name: 'Maya', result: 'sold', demandId: 'bread', catReaction: 'delighted', catName: 'Jinx',
-  });
-  assert.equal(positive.rating, 5);
-  assert.equal(positive.outcome, 'cat-loved');
-  assert.match(positive.text, /Jinx/);
-  const annoyed = prepareState();
-  annoyed.random = () => 0;
-  const negative = maybeLeaveReview(annoyed, {
-    id: 1202, name: 'Rico', result: 'sold', demandId: 'milk', catReaction: 'annoyed', catName: 'Nyx',
-  });
-  assert.equal(negative.rating, 2);
-  assert.equal(negative.outcome, 'cat-annoyed');
-  assert.match(negative.text, /Nyx/);
-});
-
-test('cat preferences survive saving and older saves gain safe reaction counters', () => {
-  const state = prepareState();
-  state.dayStats.catLoved = 3;
-  state.dayStats.catAnnoyed = 2;
-  state.customers.push({ id: 1301, name: 'Maya', catReaction: 'delighted', catName: 'Blaze' });
-  const restored = loadGameState(saveGameState(state));
-  assert.equal(restored.dayStats.catLoved, 3);
-  assert.equal(restored.dayStats.catAnnoyed, 2);
-  assert.equal(restored.customers[0].catReaction, 'delighted');
-  assert.equal(restored.customers[0].catName, 'Blaze');
-  const legacy = JSON.parse(saveGameState(state));
-  delete legacy.dayStats.catLoved;
-  delete legacy.dayStats.catAnnoyed;
-  const migrated = loadGameState(legacy);
-  assert.equal(migrated.dayStats.catLoved, 0);
-  assert.equal(migrated.dayStats.catAnnoyed, 0);
-});
-
 test('a requested quantity that exceeds shelf stock is counted as a partial basket and stockout', () => {
   const state = prepareState();
   state.shelves.apples = [{ lotId: 50001, qty: 2, receivedAt: productNow(state), expiresAt: productNow(state) + 5, unitCost: PRODUCT_BY_ID.apples.cost }];
@@ -391,33 +306,20 @@ test('a requested quantity that exceeds shelf stock is counted as a partial bask
   assert.ok(state.events.some((event) => /only get 2 of 4 apples/.test(event.message)));
 });
 
-test('food-safety reviews take precedence when the same visit also has a cat encounter', () => {
+test('expired stock draws a one-star food-safety review', () => {
   const state = prepareState();
   state.random = () => 0;
   const before = state.reputation;
   const review = maybeLeaveReview(state, {
     id: 1501, name: 'Mrs. Russo', result: 'expired', expiredProductId: 'milk', demandId: 'milk',
-    catReaction: 'annoyed', catName: 'Nyx',
   });
   assert.equal(review.outcome, 'expired');
   assert.equal(review.rating, 1);
   assert.match(review.text, /house coffee/i);
-  assert.doesNotMatch(review.text, /Nyx/);
   assert.ok(state.reputation < before);
 });
 
 
-
-test('purchasing manager stays locked until the store reaches Level 5', () => {
-  const state = prepareState();
-  const result = hirePurchasingManager(state);
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, 'level-required');
-  assert.equal(result.requiredLevel, 5);
-  state.experience = 999;
-  assert.equal(getStoreLevel(state), 4);
-  assert.equal(hirePurchasingManager(state).reason, 'level-required');
-});
 
 test('store experience unlocks Level 5 and the experience bar reports progress', () => {
   const state = createGameState(77);
@@ -429,92 +331,14 @@ test('store experience unlocks Level 5 and the experience bar reports progress',
   assert.equal(getStoreLevelProgress(state).progress, 0);
 });
 
-test('hiring Rafael charges the recruitment cost and adds his daily wage to payroll', () => {
-  const state = prepareState();
-  state.experience = 1000;
-  state.cash = 800;
-  const before = state.cash;
-  const result = hirePurchasingManager(state);
-  assert.equal(result.ok, true);
-  assert.equal(result.hireCost, PURCHASING_MANAGER.hireCost);
-  assert.equal(state.cash, before - PURCHASING_MANAGER.hireCost);
-  assert.equal(state.purchasingManagerHired, true);
-  assert.equal(state.automaticPurchasingEnabled, true);
-  assert.equal(state.dailyCosts.payroll, 59);
-  assert.equal(hirePurchasingManager(state).reason, 'already-hired');
-});
-
-test('Rafael starts monitoring quickly and orders multiple low-stock lines without using credit', () => {
-  const state = prepareState();
-  state.experience = 1000;
-  state.cash = 900;
-  assert.equal(hirePurchasingManager(state).ok, true);
-  assert.equal(state.nextAutoOrderAt, state.minute + PURCHASING_MANAGER.firstReviewDelay);
-  for (const id of ['bananas', 'milk', 'water', 'bread']) {
-    state.shelves[id] = [];
-    state.stockroom[id] = [];
-  }
-  const cashBeforeOrder = state.cash;
-  const debtBeforeOrder = state.debt;
-  state.nextAutoOrderAt = state.minute;
-  advanceGame(state, 0.2);
-  const orderEvents = state.events.filter((event) => event.type === 'staff' && /Rafael Ortiz ordered/.test(event.message));
-  assert.equal(orderEvents.length, PURCHASING_MANAGER.maxLinesPerReview);
-  for (const id of ['bananas', 'milk', 'water', 'bread']) {
-    const received = state.stockroom[id].reduce((sum, batch) => sum + batch.qty, 0);
-    assert.ok(received >= 0);
-  }
-  assert.ok(state.cash < cashBeforeOrder);
-  assert.ok(state.cash >= PURCHASING_MANAGER.cashReserve);
-  assert.equal(state.debt, debtBeforeOrder);
-  assert.equal(state.nextAutoOrderAt, state.minute + PURCHASING_MANAGER.reviewInterval);
-});
-
-test('Rafael does not order before a review is due', () => {
-  const state = prepareState();
-  state.experience = 1000;
-  state.cash = 900;
-  assert.equal(hirePurchasingManager(state).ok, true);
-  state.shelves.bananas = [];
-  state.stockroom.bananas = [];
-  const before = state.cash;
-  advanceGame(state, PURCHASING_MANAGER.firstReviewDelay - 0.1);
-  assert.equal(state.cash, before);
-  advanceGame(state, 0.2);
-  assert.ok(state.cash < before);
-});
-
-test('Rafael protects the cash reserve and can pause automatic purchasing', () => {
-  const state = prepareState();
-  state.experience = 1000;
-  state.cash = 900;
-  assert.equal(hirePurchasingManager(state).ok, true);
-  state.shelves.milk = [];
-  state.stockroom.milk = [];
-  state.cash = PURCHASING_MANAGER.cashReserve + 1;
-  const cashAtReserve = state.cash;
-  state.nextAutoOrderAt = state.minute;
-  advanceGame(state, 0.2);
-  assert.equal(state.stockroom.milk.reduce((sum, batch) => sum + batch.qty, 0), 0);
-  assert.equal(state.cash, cashAtReserve);
-  assert.equal(state.debt, 0);
-  assert.equal(setAutomaticPurchasing(state, false), true);
-  assert.equal(state.automaticPurchasingEnabled, false);
-  assert.ok(state.events.some((event) => event.type === 'staff' && /Automatic purchasing paused/.test(event.message)));
-});
-
-test('player position, store level and manager status survive saving and migration', () => {
+test('player position and store level survive saving and migration', () => {
   const state = prepareState();
   state.playerPosition = { x: -2.4, z: 1.8 };
   state.experience = 725;
-  state.purchasingManagerHired = true;
-  state.automaticPurchasingEnabled = false;
   const restored = loadGameState(saveGameState(state));
   assert.deepEqual(restored.playerPosition, { x: -2.4, z: 1.8 });
   assert.equal(restored.experience, 725);
-  assert.equal(restored.purchasingManagerHired, true);
-  assert.equal(restored.automaticPurchasingEnabled, false);
-  assert.equal(restored.dailyCosts.payroll, 59);
+  assert.equal(restored.dailyCosts.payroll, STAFF.reduce((n, person) => n + person.wage, 0));
 });
 
 test('the resident cast is a varied neighborhood with valid habits', () => {
@@ -638,15 +462,6 @@ test('repaying credit works to the cent', () => {
   const result = repayCredit(state, 100.01);
   assert.equal(result.amount, 100.01);
   assert.equal(state.debt, 0);
-});
-
-test('a delighted cat lover who found nothing does not post a cat rave', () => {
-  const state = prepareState();
-  state.random = () => 0;
-  const review = maybeLeaveReview(state, { id: 7001, name: 'Zoe', result: 'stockout', demandId: 'milk', stockoutProductId: 'milk', catReaction: 'delighted', catName: 'Jinx' });
-  assert.ok(review);
-  assert.equal(review.outcome, 'stockout');
-  assert.ok(review.rating <= 3);
 });
 
 test('the range is in three tiers by store level, and the new lines also need their fixture bought', async () => {

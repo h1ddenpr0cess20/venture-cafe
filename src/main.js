@@ -2,7 +2,7 @@ import './style.css';
 import { createAudio } from 'madness-engine/audio';
 import {
   PRODUCTS, PRODUCT_BY_ID, STAFF, createGameState, money, productNow, activeFrameDelta,
-  availableProducts, buyFixture, placeFixture, hirePurchasingManager, setAutomaticPurchasing,
+  availableProducts, buyFixture, placeFixture,
   shelfQuantity, stockroomQuantity, expiredQuantity, oldestShelfBatch, isAvailable,
   restockProduct, restockAll, placeOrder, pullExpired, adjustPrice, borrowCredit,
   repayCredit, advanceGame, beginDay, togglePause, startNextDay, saveGameState, loadGameState,
@@ -147,8 +147,7 @@ function recordNewEvents() {
     } else if (event.type === 'sale') {
       if (!audioMuted) audio.jingle([64, 69, 76], { type: 'triangle', gain: 0.055, length: 0.12 });
     } else if (event.type === 'order') notify(event.message, 'good');
-    else if (event.type === 'staff' && (event.message.includes('served ') || event.message.includes('Rafael Ortiz ordered'))) notify(event.message, 'good');
-    else if (event.type === 'cat') notify(event.message, event.detail?.includes('happier customer') ? 'good' : 'info');
+    else if (event.type === 'staff' && (event.message.includes('served '))) notify(event.message, 'good');
     else if (event.type === 'review') {
       const rating = Number(event.message.match(/(\d)-star/)?.[1] ?? 3);
       notify(`New neighborhood review · ${rating} stars`, rating <= 2 ? 'danger' : rating === 5 ? 'good' : 'info');
@@ -201,7 +200,7 @@ function updateHeader() {
 }
 
 function eventIcon(type) {
-  return ({ sale: '↗', customer: '♙', danger: '!', warning: '△', order: '▣', stock: '↔', staff: '↻', level: '↑', waste: '×', finance: '$', close: '▣', good: '✓', note: '✳', review: '★', cat: '♥' })[type] ?? '·';
+  return ({ sale: '↗', customer: '♙', danger: '!', warning: '△', order: '▣', stock: '↔', staff: '↻', level: '↑', waste: '×', finance: '$', close: '▣', good: '✓', note: '✳', review: '★', })[type] ?? '·';
 }
 function renderActivity(limit = 6) {
   return `<div class="activity-list">${state.events.slice(0, limit).map((event) => `
@@ -518,7 +517,6 @@ function renderDaySummary() {
       <h2>${state.gameOver ? 'The shutters stay down.' : 'Another day on the block.'}</h2>
       <p>${state.gameOver ? 'Cafe finances or neighborhood reputation ran out of runway. The doors have closed.' : 'Count the till, check the shelves, and get ready for tomorrow.'}</p>
       <div class="summary-metrics"><div><span>SALES</span><b>${money(summary.revenue)}</b></div><div><span>GROSS PROFIT</span><b>${money(summary.grossProfit)}</b></div><div><span>DINERS</span><b>${summary.customers}</b></div><div><span>FOOD / SERVICE</span><b>${summary.averageFoodQuality ?? 0} / ${summary.averageServiceQuality ?? 0}</b></div></div>
-      <div class="summary-cat-line"><span>CAT ENCOUNTERS</span><b>♥ ${summary.catLoved ?? 0} charmed</b><b>! ${summary.catAnnoyed ?? 0} annoyed</b></div>
       <div class="summary-costs"><div><span>Rent</span><b>${money(summary.expenses.rent)}</b></div><div><span>Payroll</span><b>${money(summary.expenses.payroll)}</b></div><div><span>Utilities</span><b>${money(summary.expenses.utilities)}</b></div><div><span>Credit interest</span><b>${money(summary.expenses.interest)}</b></div><div><span>Inventory purchased</span><b>${money(summary.purchases)}</b></div><div><span>Expired stock written off</span><b>${money(summary.waste)}</b></div></div>
       <div class="summary-net ${isOver ? 'negative' : 'positive'}"><span>TRADING RESULT AFTER OVERHEAD</span><strong>${summary.net >= 0 ? '+' : '−'}${money(Math.abs(summary.net))}</strong></div>
       <div class="summary-balance"><span>REGISTER ${money(summary.cash)}</span><span>CREDIT ${money(summary.debt)}</span></div>
@@ -594,16 +592,6 @@ document.addEventListener('click', (event) => {
       state.orderCases[productId] = 1;
     } else notify(result.reason === 'insufficient-funds' ? `Short ${money(result.shortfall)}. Use the credit line or choose fewer cases.` : 'That order could not be placed.', 'danger');
   }
-  if (action === 'hire-purchasing-manager') {
-    const result = hirePurchasingManager(state);
-    notify(result.ok ? 'Rafael joined the team. Automatic purchasing is now active.' : result.reason === 'level-required' ? `Reach store level ${result.requiredLevel} to unlock Rafael.` : result.reason === 'insufficient-funds' ? `You need ${money(result.required)} in register cash to hire Rafael.` : 'Rafael is already on the team.', result.ok ? 'good' : 'info');
-  }
-  if (action === 'toggle-auto-purchase') {
-    const enabled = !state.automaticPurchasingEnabled;
-    setAutomaticPurchasing(state, enabled);
-    notify(enabled ? 'Rafael will resume checking stock needs.' : 'Automatic supplier orders paused.', 'info');
-  }
-
   if (action === 'borrow') {
     const result = borrowCredit(state, amount);
     notify(result.ok ? `${money(amount)} added to the register.` : `Only ${money(result.available || 0)} credit is available.`, result.ok ? 'good' : 'danger');
