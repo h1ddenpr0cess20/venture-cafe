@@ -614,7 +614,7 @@ test('shoppers still inside at closing time finish their shop instead of vanishi
   beginDay(state);
   state.nextArrival = 100000;
   state.minute = 20 * 60 + 58;
-  state.customers.push({ id: 6001, name: 'Kenji', basket: [{ productId: 'rice', qty: 1 }], phase: 'browsing', phaseTotal: 20, phaseTimer: 15, result: null, bought: 0, spend: 0 });
+  state.customers.push({ id: 6001, name: 'Kenji', menuChoiceId: 'scrambled-eggs', orderedMenuId: 'scrambled-eggs', arrivedAt: state.minute, phase: 'browsing', phaseTotal: 20, phaseTimer: 15, result: null, bought: 0, spend: 0, foodQuality: 90, serviceQuality: 90 });
   advanceGame(state, 3);
   assert.equal(state.dayEnded, true);
   assert.equal(state.dayStats.unitsSold, 1);
@@ -711,20 +711,48 @@ test('the kitchen pantry is fixed back-of-house infrastructure', async () => {
   assert.equal(placeFixture(state, 'bin-1', { x: 0, z: 0, rot: 0 }).reason, 'not-owned');
 });
 
-test('table diners wait for the waiter to serve breakfast before their visit timer runs', () => {
+test('the waiter takes a menu order and waits for kitchen preparation before serving it', () => {
   const state = prepareState();
   state.nextArrival = 100000;
   const customer = {
-    id: 9001, name: 'Ari', basket: [{ productId: 'eggs', qty: 1 }],
-    seatId: 'table-a-west', arrivalDuration: 2.4, arrivalTimer: 0, serviceStatus: 'waiting', phase: 'browsing',
-    phaseTotal: 12, phaseTimer: 12, result: null, bought: 0, spend: 0, thrift: 1,
+    id: 9001, name: 'Ari', reviewName: 'A. Guest', menuChoiceId: 'scrambled-eggs',
+    seatId: 'table-a-west', arrivalDuration: 2.4, arrivalTimer: 0, serviceStatus: 'waiting',
+    phase: 'browsing', phaseTotal: 12, phaseTimer: 12, result: null, bought: 0, spend: 0,
   };
   state.customers.push(customer);
   advanceGame(state, 1);
   assert.equal(customer.phase, 'browsing');
   assert.equal(customer.serviceStatus, 'serving');
-  advanceGame(state, 3.5);
+  assert.equal(customer.orderedMenuId, undefined, 'no food order exists before the waiter reaches the diner');
+  advanceGame(state, 4);
   assert.equal(customer.serviceStatus, 'served');
+  assert.equal(customer.orderedMenuId, 'scrambled-eggs');
+  assert.ok(customer.foodQuality > 0);
+  assert.ok(customer.serviceQuality > 0);
   assert.equal(customer.phase, 'browsing');
-  assert.ok(state.events.some((event) => /waiter served Ari/i.test(event.message)));
+  const messages = state.events.map((event) => event.message).reverse();
+  const orderAt = messages.findIndex((message) => /took Ari's order/i.test(message));
+  const servedAt = messages.findIndex((message) => /served Ari's Soft Scrambled Eggs/i.test(message));
+  assert.ok(orderAt >= 0 && servedAt > orderAt, 'the order is taken and prepared before delivery');
+});
+
+
+
+test('new public reviews score the meal and the service separately', () => {
+  const state = prepareState();
+  state.random = () => 0;
+  const strong = maybeLeaveReview(state, {
+    id: 9902, name: 'Maya', orderedMenuId: 'sunny-side-up', foodQuality: 98, serviceQuality: 96,
+  });
+  assert.equal(strong.rating, 5);
+  assert.equal(strong.outcome, 'excellent');
+  assert.equal(strong.foodQuality, 98);
+  assert.equal(strong.serviceQuality, 96);
+
+  const weak = maybeLeaveReview(state, {
+    id: 9903, name: 'Rico', orderedMenuId: 'diner-omelette', foodQuality: 35, serviceQuality: 42,
+  });
+  assert.equal(weak.rating, 1);
+  assert.equal(weak.outcome, 'poor');
+  assert.match(weak.text, /disappointing|missed the mark|not good/i);
 });

@@ -11,3 +11,25 @@
 @media (max-width:1700px){.scene-hint{display:none}}
 
 .brand-name,.ops-heading h2,.section-heading h3,.opening-card h1,.summary-card h2{font-family:var(--serif)}.brand-kicker,.eyebrow,.stat-label,.clock-block span,.scene-location,.scene-hint,.scene-foot-meta,.bottom-rail,.panel-footer strong,.panel-footer span,.tab,.speed-button,.open-pill,.metric-card span,.summary-eyebrow{font-family:var(--mono)}.opening-card h1 em{font-family:var(--hand);font-size:1.12em;font-weight:600}.menu-list{display:flex;flex-direction:column}.menu-item{display:flex;gap:12px;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line)}.menu-item-copy{display:flex;min-width:0;flex-direction:column;gap:3px}.menu-item-copy strong{color:var(--paper);font-size:11px}.menu-item-copy small{color:var(--muted);font-size:9px}.menu-item-copy span{color:var(--gold);font:9px var(--mono)}.menu-item>b{color:var(--gold);font:500 13px var(--mono);white-space:nowrap}
+
+/* Quality is separated into kitchen and table-service performance. */
+.quality-meter{height:6px;margin:12px 0 8px;border-radius:99px;background:rgba(34,48,41,.1);overflow:hidden}
+.quality-meter i{display:block;height:100%;border-radius:inherit;background:#638b6f}
+.staff-quality-list{display:grid;gap:12px}
+.staff-quality-card{padding:14px 15px;border:1px solid rgba(56,69,56,.12);border-radius:12px;background:rgba(255,255,255,.32)}
+.staff-card-heading{display:flex;align-items:center;gap:10px}
+.staff-card-heading>span:nth-child(2){display:grid;gap:3px;flex:1}
+.staff-card-heading strong{font-size:13px}
+.staff-card-heading small{font-size:11px;color:var(--muted,#777)}
+.staff-card-heading>b{font:600 15px var(--font-display,Georgia);color:var(--green,#315b45)}
+.staff-avatar{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#e8dfcc;color:#315b45;font-weight:700;font-size:11px}
+.staff-card-foot{display:flex;justify-content:space-between;font-size:9px;letter-spacing:.08em;color:var(--muted,#777)}
+.quality-explainer{display:grid;gap:14px}
+.quality-explainer>div{padding:12px 14px;border-left:3px solid #638b6f;background:rgba(255,255,255,.28)}
+.quality-explainer b{font-size:10px;letter-spacing:.1em}
+.quality-explainer p{margin:5px 0 0;font-size:12px;line-height:1.5;color:var(--muted,#777)}
+.review-quality{display:flex;gap:16px;flex-wrap:wrap;padding-top:3px;font-size:9px;letter-spacing:.08em;color:var(--muted,#777)}
+.review-quality b{color:var(--green,#315b45);font-weight:700}
+.service-queue{display:grid;gap:5px;margin-top:14px;padding:12px 14px;border-radius:10px;background:rgba(49,91,69,.08)}
+.service-queue span{font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--green,#315b45)}
+.service-queue small{font-size:11px;line-height:1.45;color:var(--muted,#777)}

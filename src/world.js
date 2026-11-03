@@ -1,24 +1,24 @@
 import * as GFX from 'madness-engine/gfx';
 import { createStage } from 'madness-engine/stage';
 import { createView } from 'madness-engine/view';
-import { createModel, createStatic } from 'madness-engine/models/model';
+import { createModel } from 'madness-engine/models/model';
 import { createBakeLibrary } from 'madness-engine/models/bake';
 import { bake as legacyBake } from 'madness-engine/models/legacy-bake';
 import { floorTexture, wallTexture } from 'madness-engine/textures/venue';
 import { paintRoom } from 'madness-engine/textures/rooms/town';
 import { paintSky } from 'madness-engine/textures/skies/haze';
 import { screenMovementToWorld, startsCameraDrag, holdsCameraDrag, endsCameraDrag } from './controls.js';
-import { PRODUCTS, CAT_ROSTER, STAFF, PRODUCT_BY_ID, RESIDENTS, RESIDENT_BY_ID, isAvailable, shelfQuantity, stockroomQuantity, activeFrameDelta } from './sim.js';
+import { CAT_ROSTER, STAFF, RESIDENTS, RESIDENT_BY_ID, activeFrameDelta } from './sim.js';
 import {
   SHELL, FRONT_DOOR, REAR_DOOR, BACKROOM, SIDEWALK, LEVELS, GONDOLA, COOLER_LEVELS, COOLER_HEIGHT, BAKERY_TOP, COUNTER,
-  BACKBAR, BACKROOM_FIXTURES, SLOTS, DOOR_IN, SIDEWALK_SPAWN, SIDEWALK_EXITS, CHECKOUT, LOU_HOME, BOB_HOME, WAITER_HOME, MANAGER_HOME, PLAYER_HOME,
+  BACKBAR, SLOTS, DOOR_IN, SIDEWALK_SPAWN, SIDEWALK_EXITS, CHECKOUT, LOU_HOME, BOB_HOME, WAITER_HOME, KITCHEN_PASS, MANAGER_HOME, PLAYER_HOME,
   GONDOLA_2_BOARDS, BIN_SIZE, PIECES, PIECE_BY_ID, pieceOfProduct, isStanding, placementOf, setLayout, footprint, snapPlacement, placementProblem,
   CAT_PATROLS, navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS, CAFE_SERVICE_STOPS,
 } from './layout.js';
 import { wallOpacity, easeOpacity, WALL_MODES } from './walls.js';
 import { CAST, DETAIL, loadingJobs, backgroundJobs, FIRST_WAVE } from './cast.js';
 import { STREETSCAPE, STREET_MODELS } from './streetscape.js';
-import { buildCafeFurniture, buildCafeKitchen, buildCafeMascots } from './cafe.js';
+import { buildCafeFurniture, buildCafeKitchen } from './cafe.js';
 import { createBreakfastPlate } from './cafe-food.js';
 
 const PLAYER_SPEED = 2.25;
@@ -26,7 +26,6 @@ const HUMAN_HEIGHT = 1.42;
 const CAT_HEIGHT = 0.31;
 const BRICK_TILE = 2.25;                       // world units a brick texture tile covers
 const STORE_CENTER = [0, 0];
-const MAX_VISIBLE_STOCK = 12;                  // stock per shelf slot is drawn as at most this many units
 
 function normalizeActorHeight(model, targetHeight) {
   const geometry = model.mesh.geometry;
@@ -305,7 +304,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     const stripe = front.box(-W + 0.5 + i * ((W * 2 - 1) / 17), 3.55, Z + 0.95, (W * 2 - 1) / 17 + 0.003, 0.06, 2.1, i % 2 ? 'awnA' : 'awnB', () => std(i % 2 ? '#e9e3d0' : '#2f6b57', { roughness: 0.9 }), { rotation: [0.36, 0, 0] });
     stripe.castShadow = true;
   }
-  front.plane('BODEGA', 0, 4.0, Z + 0.17, 7.4, 0.8, { background: '#1d2c2f', foreground: '#f6e8ca', accent: '#e07355', fontSize: 70, width: 1024, height: 112 });
+  front.plane('VENTURE CAFE', 0, 4.0, Z + 0.17, 7.4, 0.8, { background: '#1d2c2f', foreground: '#f6e8ca', accent: '#c2a26a', fontSize: 58, width: 1024, height: 112 });
 
   // Back: solid brick with the delivery door and two high windows.
   const back = wall('back', { normal: [0, -1] });
@@ -372,9 +371,8 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     scene.add(mesh);
   }
 
-  // ——— shelving and fixtures ———
-  onProgress('Setting up shelves and the checkout', 70);
-  const shelfLabels = new Map();
+  // ——— cafe fixtures ———
+  onProgress('Setting up cafe furniture and prep stations', 70);
   // Everything that stands on the floor and can be moved (layout.js PIECES): each is built in its own frame, facing +z, and
   // stood where the layout says. The ones that are bought stay unseen until they are.
   const pieceViews = new Map();
@@ -427,38 +425,40 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     signPlane(group, piece.label, 0, ch + 0.2, cd / 2 + 0.04, Math.min(3, cw - 0.3), 0.3, coolerStyle);
   }
   function buildPieces() {
+    // Retail shelf fixtures have no place in the dining room or cafe kitchen.
+    // Keep empty keyed groups so old saves/layout references migrate safely, but do not render gondolas or display bins.
     for (const piece of PIECES) {
-      const group = new GFX.Group(); scene.add(group); pieceViews.set(piece.id, group); pieceOfGroup.set(group, piece.id);
-      if (!piece.always) { group.visible = false; for (const id of piece.fixtures) forFixture(id, group); }
-      if (piece.type === 'gondola') buildGondola(group, piece);
-      else if (piece.type === 'bin') buildBin(group);
-      else if (piece.type === 'table') buildTable(group, piece);
-      else buildCooler(group, piece);
+      const group = new GFX.Group();
+      group.visible = false;
+      scene.add(group);
+      pieceViews.set(piece.id, group);
+      pieceOfGroup.set(group, piece.id);
     }
   }
+
   function checkout() {
     const { x, z, w, d, top } = COUNTER;
-    box(scene, x, top / 2 - 0.05, z, w, top - 0.1, d, mats.wood);                                   // the body
-    box(scene, x, top - 0.02, z, w + 0.14, 0.1, d + 0.14, mats.dark);                                // the top
-    box(scene, x - 0.3, top + 0.035, z, 0.16, 0.04, d - 0.3, mats.rubber);                          // the belt
+    box(scene, x, top / 2 - 0.05, z, w, top - 0.1, d, mats.wood);
+    box(scene, x, top - 0.02, z, w + 0.14, 0.1, d + 0.14, mats.dark);
+    box(scene, x - 0.3, top + 0.035, z, 0.16, 0.04, d - 0.3, mats.rubber);
     box(scene, x + 0.2, top + 0.035, z, 0.4, 0.02, d - 0.2, mats.trim);
-    box(scene, x - w / 2 - 0.04, top / 2 - 0.05, z, 0.06, top - 0.3, d - 0.2, mats.woodDark);       // toe-kick panel facing the queue
-    // The register, its screen and the card reader, at the cashier's end.
-    box(scene, x + 0.25, top + 0.17, z + 0.2, 0.55, 0.26, 0.5, mats.steelDark);
-    box(scene, x + 0.25, top + 0.42, z + 0.2, 0.48, 0.3, 0.06, mats.dark, { rotation: [0, 0, 0] });
-    box(scene, x + 0.25, top + 0.43, z + 0.17, 0.4, 0.22, 0.02, mats.led, { castShadow: false });
-    box(scene, x - 0.15, top + 0.1, z + 1.1, 0.22, 0.14, 0.18, mats.steelDark);
-    box(scene, x + 0.2, top + 0.2, z - 1.3, 0.3, 0.4, 0.3, std('#d9d2bf'));                          // the bag stand
-    // The candy rack at the near end: little colored boxes on a stand.
-    box(scene, x - 0.1, top + 0.2, z - d / 2 + 0.25, 0.6, 0.06, 0.4, mats.woodDark);
-    ['#d34b3d', '#d4b13e', '#5c8c61', '#5c7795', '#9a5aa0', '#e08a3c'].forEach((c, i) => box(scene, x - 0.3 + (i % 3) * 0.2, top + 0.3, z - d / 2 + 0.15 + Math.floor(i / 3) * 0.2, 0.17, 0.16, 0.17, std(c, { roughness: 0.6 })));
-    // The cashier's back shelving on the right wall.
+    box(scene, x - w / 2 - 0.04, top / 2 - 0.05, z, 0.06, top - 0.3, d - 0.2, mats.woodDark);
+
+    // A small cafe register. Remove the inherited grocery bag stand and candy rack.
+    box(scene, x + 2.8, top + 0.13, z + 0.08, 0.42, 0.2, 0.34, mats.steelDark);
+    box(scene, x + 2.8, top + 0.32, z + 0.08, 0.38, 0.2, 0.05, mats.dark);
+    box(scene, x + 2.8, top + 0.33, z + 0.05, 0.31, 0.14, 0.018, mats.led, { castShadow: false });
+
+    // The backbar uses coffee tins and cups, not bright retail cartons.
     const bb = BACKBAR;
     box(scene, bb.x, 1.1, bb.z, 0.12, 2.2, bb.d, mats.woodDark);
-    for (const y of [0.5, 1.1, 1.7]) box(scene, bb.x - 0.18, y, bb.z, 0.34, 0.05, bb.d - 0.1, mats.woodLight);
-    ['#d9a55f', '#6c8e7a', '#c95c4e', '#4d6c8a', '#e0cf91', '#8e5c7a', '#f0e7cf'].forEach((c, i) => {
-      for (const y of [0.5, 1.1, 1.7]) box(scene, bb.x - 0.18, y + 0.14, bb.z - 1.8 + i * 0.6, 0.22, 0.24, 0.4, std(c, { roughness: 0.65 }));
-    });
+    for (const y of [0.5, 1.1, 1.7]) {
+      box(scene, bb.x - 0.18, y, bb.z, 0.34, 0.05, bb.d - 0.1, mats.woodLight);
+      for (const offset of [-2.2, -0.8, 0.7, 2.1]) {
+        cylinder(GFX, scene, bb.x - 0.18 + offset, y + 0.14, bb.z, 0.07, 0.07, 0.22,
+          std('#e5dcc8', { roughness: 0.5 }), 18);
+      }
+    }
   }
   function backroom() {
     buildCafeKitchen(GFX, scene, mats);
@@ -467,88 +467,34 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   checkout();
   backroom();
   buildCafeFurniture(GFX, scene);
-  buildCafeMascots(GFX, scene);
 
   // The models were being sculpted in workers all this while: wait for the first wave before standing any of them up,
   // so nothing is baked on the page's own thread. (No workers, or a slow bake: it falls back to baking here.)
   onProgress('Sculpting the neighborhood', 72);
   if (typeof Worker !== 'undefined') await Promise.race([Promise.all(waits), new Promise((resolve) => setTimeout(resolve, 90000))]);
 
-  // ——— the stock: the engine's grocery props, a few of each to match what is on the shelf ———
-  onProgress('Stocking the shelves', 80);
+  // The cafe does not instantiate grocery display props. Recipe ingredients are tracked in the kitchen and dry-store UI.
+  onProgress('Preparing kitchen inventory', 80);
   const displayGroups = new Map();
-  const sizeCache = new Map();
-  function sizeOf(mesh) {
-    mesh.geometry.computeBoundingBox();
-    const b = mesh.geometry.boundingBox, s = mesh.scale.x || 1;
-    return { w: (b.max.x - b.min.x) * s, h: (b.max.y - b.min.y) * s, d: (b.max.z - b.min.z) * s };
-  }
-  for (const product of PRODUCTS) {
-    const slot = SLOTS[product.id];
-    const def = CAST[`prop:${product.id}`];
-    const group = new GFX.Group();
-    group.position.set(slot.x, slot.y, slot.z); group.rotation.y = slot.yaw; scene.add(group);
-    const sample = createStatic(GFX, def, { detail: DETAIL.prop });
-    const size = sizeOf(sample);
-    sizeCache.set(product.id, size);
-    const cols = Math.max(1, Math.min(6, Math.floor(slot.width / (size.w * 1.12))));
-    const rows = Math.max(1, Math.min(2, Math.floor(slot.depth / (size.d * 1.12))));
-    const capacity = Math.min(MAX_VISIBLE_STOCK, cols * rows);
-    const units = [];
-    for (let i = 0; i < capacity; i++) {
-      const row = Math.floor(i / cols), col = i % cols;
-      const unit = i === 0 ? sample : createStatic(GFX, def, { detail: DETAIL.prop });
-      const colsInRow = Math.min(cols, capacity - row * cols);
-      const spacing = slot.width / cols;
-      unit.position.set((col - (colsInRow - 1) / 2) * spacing, 0, slot.depth / 2 - size.d / 2 - 0.02 - row * (size.d * 1.15 + 0.03));
-      unit.rotation.y = ((i * 37) % 11 - 5) * 0.012;
-      group.add(unit); units.push(unit);
-    }
-    // The shelf-edge tag for each line.
-    const tag = new GFX.Mesh(new GFX.PlaneGeometry(Math.min(0.9, slot.width * 0.8), 0.22), new GFX.MeshBasicMaterial({ map: labelTexture(product.short), side: GFX.FrontSide }));
-    // A bin's tag is on the front face of its low lip (the lip is 0.3 tall, centered 0.02 above the slot, and its face is 0.665 out
-    // from the middle); a gondola's tags hang clear of its base, not in its plane.
-    if (slot.kind === 'bin') tag.position.set(0, 0.02, 0.665);
-    else tag.position.set(0, -0.14, slot.depth / 2 + (slot.kind === 'gondola' ? 0.06 : 0.03));
-    group.add(tag);
-    shelfLabels.set(product.id, tag);
-    displayGroups.set(product.id, { group, units, tag, product, capacity, lastQty: -1 });
-  }
 
-  // The stockroom: cartons on the rack and the pallet, more of them the more is in the back.
-  const cartonDef = CAST['prop:carton'];
-  const cartons = [];
-  const rack = BACKROOM_FIXTURES.rack, pallet = BACKROOM_FIXTURES.pallet;
-  for (const [level, y] of [0.38, 1.03, 1.68].entries()) for (let i = 0; i < 4; i++) {
-    const c = createStatic(GFX, cartonDef, { detail: DETAIL.prop });
-    c.rotation.y = Math.PI / 2; c.scale.setScalar(1.6);
-    c.position.set(rack.x, y, rack.z - rack.d / 2 + 0.38 + i * 0.58 + (level % 2) * 0.03);
-    c.visible = false; scene.add(c); cartons.push(c);
-  }
-  for (const [layer, y] of [0.14, 0.5, 0.86].entries()) for (let i = 0; i < 4; i++) {
-    const c = createStatic(GFX, cartonDef, { detail: DETAIL.prop });
-    c.scale.setScalar(1.6);
-    c.rotation.y = layer % 2 ? Math.PI / 2 : 0;
-    c.position.set(pallet.x + ((i % 2) - 0.5) * 0.6, y, pallet.z + (Math.floor(i / 2) - 0.5) * 0.6);
-    c.visible = false; scene.add(c); cartons.push(c);
-  }
+  // The former stockroom carton stack is removed; the cafe kitchen now has a prep station and a tidy dry store.
 
   // ——— people ———
   onProgress('Bringing in the staff and the venture-cafe cats', 86);
   const lou = createModel(GFX, CAST['staff:lou'], { detail: DETAIL.staff });
   const louFloor = normalizeActorHeight(lou, HUMAN_HEIGHT);
   const louHome = [LOU_HOME[0], louFloor, LOU_HOME[2]];
-  lou.group.position.set(...louHome); lou.group.rotation.y = -Math.PI / 2; scene.add(lou.group);
+  lou.group.position.set(...louHome); lou.group.rotation.y = 0; scene.add(lou.group);
 
   const bob = createModel(GFX, CAST['staff:bob'], { detail: DETAIL.staff });
   const bobFloor = normalizeActorHeight(bob, HUMAN_HEIGHT);
   const bobHome = [BOB_HOME[0], bobFloor, BOB_HOME[2]];
-  bob.group.position.set(...bobHome); bob.group.rotation.y = Math.PI / 2; scene.add(bob.group);
+  bob.group.position.set(...bobHome); bob.group.rotation.y = Math.atan2(-0.2, -1.2); scene.add(bob.group);
 
   const waiter = createModel(GFX, CAST['staff:waiter'], { detail: DETAIL.staff });
   const waiterFloor = normalizeActorHeight(waiter, HUMAN_HEIGHT);
   const waiterHome = [WAITER_HOME[0], waiterFloor, WAITER_HOME[2]];
-  waiter.group.position.set(...waiterHome); waiter.group.rotation.y = Math.PI; scene.add(waiter.group);
+  waiter.group.position.set(...waiterHome); waiter.group.rotation.y = Math.atan2(-6.4, 4.2); scene.add(waiter.group);
 
   const staffModels = [
     { model: lou, name: STAFF[0].name, time: 0, home: louHome, floor: louFloor, poseAccumulator: 0 },
@@ -557,11 +503,15 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   ];
 
   const playerModel = createModel(GFX, CAST.owner, { detail: DETAIL.owner });
-  const playerFloor = normalizeActorHeight(playerModel, HUMAN_HEIGHT);
-  const savedPlayer = window.__ventureCafeState?.playerPosition ?? { x: PLAYER_HOME[0], z: PLAYER_HOME[2] };
+  const playerScale = 0.86;
+  const playerFloor = normalizeActorHeight(playerModel, HUMAN_HEIGHT) * playerScale;
+  playerModel.group.scale.multiplyScalar(playerScale);
+  const storedPlayer = window.__ventureCafeState?.playerPosition ?? { x: PLAYER_HOME[0], z: PLAYER_HOME[2] };
+  const savedPlayer = storedPlayer.z > -4.2 ? { x: PLAYER_HOME[0], z: PLAYER_HOME[2] } : storedPlayer;
   const spot = navBlocked(savedPlayer.x, savedPlayer.z) ? nearestWalkable(savedPlayer.x, savedPlayer.z) : savedPlayer;
   const player = { model: playerModel, floor: playerFloor, x: spot.x, z: spot.z, time: 0, poseAccumulator: 0 };
   playerModel.group.position.set(player.x, playerFloor, player.z);
+  playerModel.group.rotation.y = 0;
   scene.add(playerModel.group);
   const tagStyle = (accent, w = 256) => ({ background: '#355746', foreground: '#f5edd8', accent, width: w, height: 96, fontSize: 32 });
   const makeTag = (text, style, order) => {
@@ -640,8 +590,8 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   const readyResidents = new Set(FIRST_WAVE);
   const servicePlates = new Map(CAFE_SERVICE_STOPS.map((stop) => {
     const plate = createBreakfastPlate(GFX, stop.plateKind);
-    plate.position.set(stop.plateX, 1.03, stop.plateZ);
-    plate.scale.setScalar(0.43);
+    plate.position.set(stop.plateX, 0.84, stop.plateZ);
+    plate.scale.setScalar(0.22);
     plate.visible = false;
     scene.add(plate);
     return [stop.id, plate];
@@ -682,7 +632,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
       catBadge.renderOrder = 20;
       scene.add(catBadge);
     }
-    const actor = { model, id: customer.id, catBadge, phase: null, route: [start], routeFraction: 0.6, time: customer.id * 0.7, poseAccumulator: 0, floor, start };
+    const actor = { model, id: customer.id, catBadge, phase: null, route: [start], routeFraction: 0.6, time: customer.id * 0.7, poseAccumulator: 0, poseClip: 'idle', seatedAt: null, floor, start };
     customerActors.set(customer.id, actor);
     setCustomerRoute(actor, customer);
     // Someone restored mid-shop starts where their clock says they should be, not out on the street.
@@ -716,22 +666,29 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
         : Math.min(1, elapsed / moveDuration);
       const point = pointOnRoute(actor.route, progress);
       const ahead = pointOnRoute(actor.route, Math.min(1, progress + 0.025));
-      // There is no verified sit clip in this cast. Lower the idle actor into the seat
-      // line; booth backs and table edges conceal the legs without calling a fake animation.
       const seated = progress >= 1 && customer.phase === 'browsing';
-      actor.model.group.position.set(point[0], actor.floor - (seated ? 0.43 : 0), point[2]);
+      actor.model.group.position.set(point[0], actor.floor, point[2]);
       if (progress < 1) faceAlong(actor.model.group, point, ahead);
       else if (seated && actor.seat) actor.model.group.rotation.y = actor.seat.yaw;
       else if (customer.phase === 'checkout') actor.model.group.rotation.y = Math.PI / 2;
       if (actor.catBadge) {
-        actor.catBadge.position.set(point[0], actor.floor + (seated ? -0.43 : 0) + 1.72, point[2]);
+        actor.catBadge.position.set(point[0], actor.floor + 1.72, point[2]);
         actor.catBadge.quaternion.copy(stage.camera.quaternion);
         actor.catBadge.visible = customer.phase !== 'leaving';
       }
       actor.time += dt;
       actor.poseAccumulator += dt;
       if (actor.poseAccumulator >= 0.05) {
-        actor.model.pose({ clip: progress < 1 ? 'walk' : seated ? 'idle' : customer.phase === 'checkout' ? 'idle' : 'look', t: actor.time, time: actor.time, seed: customer.id });
+        const clip = progress < 1 ? 'walk' : seated ? 'sit' : customer.phase === 'checkout' ? 'idle' : 'look';
+        let t = actor.time;
+        if (clip === 'sit') {
+          if (actor.poseClip !== 'sit') actor.seatedAt = actor.time;
+          t = Math.min(0.45, Math.max(0, actor.time - (actor.seatedAt ?? actor.time)));
+        } else {
+          actor.seatedAt = null;
+        }
+        actor.model.pose({ clip, t, time: actor.time, seed: customer.id });
+        actor.poseClip = clip;
         actor.poseAccumulator %= 0.05;
       }
     }
@@ -750,7 +707,8 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
       worker.time += dt;
       worker.poseAccumulator += dt;
       if (worker.poseAccumulator >= 0.05) {
-        worker.model.pose({ clip: 'idle', t: worker.time, time: worker.time, seed: worker.name.length });
+        const preparing = worker.name === 'Bob' && state.waiterWork?.stage === 'preparing-order';
+        worker.model.pose({ clip: preparing ? 'look' : 'idle', t: worker.time, time: worker.time, seed: worker.name.length });
         worker.poseAccumulator %= 0.05;
       }
       worker.model.group.position.set(...worker.home);
@@ -767,27 +725,29 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     const here = [actor.model.group.position.x, 0, actor.model.group.position.z];
 
     if (actor.routeStage !== stageName || actor.routeCustomer !== task.customerId) {
-      const destination = (stageName === 'walking-to-table' || stageName === 'presenting') && stop
+      const goingToDiner = ['walking-to-table', 'taking-order', 'walking-to-delivery', 'presenting'].includes(stageName);
+      const destination = goingToDiner && stop
         ? [stop.x, 0, stop.z]
-        : [WAITER_HOME[0], 0, WAITER_HOME[2]];
+        : ['returning-to-kitchen', 'preparing-order'].includes(stageName)
+          ? KITCHEN_PASS
+          : [WAITER_HOME[0], 0, WAITER_HOME[2]];
       actor.route = planWalkRoute(here, [destination]);
       actor.routeStage = stageName;
       actor.routeCustomer = task.customerId;
     }
 
     let moving = false;
-    if (stageName === 'walking-to-table' || stageName === 'returning') {
+    if (['walking-to-table', 'returning-to-kitchen', 'walking-to-delivery', 'returning'].includes(stageName)) {
       const progress = Math.min(1, Math.max(0, 1 - task.timer / Math.max(0.01, task.duration)));
       const point = pointOnRoute(actor.route, progress);
       const ahead = pointOnRoute(actor.route, Math.min(1, progress + 0.035));
       actor.model.group.position.set(point[0], actor.floor, point[2]);
       if (progress < 1) faceAlong(actor.model.group, point, ahead);
       moving = progress < 1;
-    } else if (stageName === 'presenting' && stop) {
+    } else if (['taking-order', 'preparing-order', 'presenting'].includes(stageName)) {
       const point = actor.route[actor.route.length - 1];
       actor.model.group.position.set(point[0], actor.floor, point[2]);
-      const customerSeat = seat ? [seat.x, 0, seat.z] : [point[0], 0, point[2]];
-      faceAlong(actor.model.group, point, customerSeat);
+      if (seat && (stageName === 'taking-order' || stageName === 'presenting')) faceAlong(actor.model.group, point, [seat.x, 0, seat.z]);
     } else {
       actor.model.group.position.set(...actor.home);
     }
@@ -858,19 +818,8 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
 
   function syncDisplays(state) {
     syncFixtures(state);
-    for (const [id, display] of displayGroups) {
-      display.group.visible = false; // cafe stock is staged at the kitchen and service bar, not on grocery shelves
-      const qty = shelfQuantity(state, id);
-      if (display.lastQty === qty) continue;
-      display.lastQty = qty;
-      const visible = qty <= 0 ? 0 : Math.max(1, Math.round(display.capacity * Math.min(1, qty / 16)));
-      display.units.forEach((unit, i) => { unit.visible = i < visible; });
-      display.tag.material.color.set(qty === 0 ? '#777777' : '#ffffff');
-    }
-    let back = 0;
-    for (const product of PRODUCTS) back += stockroomQuantity(state, product.id);
-    const shown = back <= 0 ? 0 : Math.min(cartons.length, 1 + Math.floor(back / 14));
-    cartons.forEach((c, i) => { c.visible = i < shown; });
+    // Inventory quantities are reflected in the kitchen UI, not rendered as grocery shelf meshes.
+    // Dry-store quantities are tracked in the cafe UI; no floating retail cartons are rendered behind the counter.
   }
 
   function updatePlayer(state, dt) {
@@ -895,7 +844,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
       playerModel.pose({ clip: moving ? 'walk' : 'idle', t: player.time, time: player.time, seed: 29, pace: playerKeys.has('run') ? 1.35 : 1 });
       player.poseAccumulator %= 0.04;
     }
-    ownerTag.position.set(player.x, player.floor + 1.56, player.z);
+    ownerTag.position.set(player.x, player.floor + 1.34, player.z);
     ownerTag.quaternion.copy(stage.camera.quaternion);
     ownerTag.visible = state.started;
     state.playerPosition = { x: player.x, z: player.z };

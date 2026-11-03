@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CAFE_SEATS, CAFE_TABLES, CAFE_BOOTHS, CAFE_BAR_STOOLS, CAFE_FURNITURE,
-  SIDEWALK_SPAWN, DOOR_IN, WAITER_HOME, CAFE_SERVICE_STOPS, findWalkPath, navBlocked,
+  SIDEWALK_SPAWN, DOOR_IN, WAITER_HOME, KITCHEN_PASS, CAFE_SERVICE_STOPS, findWalkPath, navBlocked,
 } from '../src/layout.js';
 
 test('cafe includes a service bar, dining tables, booths and multiple seat types',()=>{
@@ -21,8 +21,10 @@ test('every table and booth guest position is clear and reachable from the entra
  }
 });
 
-test('the waiter has a clear route to each table and booth service point', () => {
+test('the waiter has clear routes between the dining room, kitchen pass, tables and booths', () => {
   assert.equal(navBlocked(WAITER_HOME[0], WAITER_HOME[2]), false);
+  assert.equal(navBlocked(KITCHEN_PASS[0], KITCHEN_PASS[2]), false);
+  assert.ok(findWalkPath(WAITER_HOME, KITCHEN_PASS, { strict: true }), 'waiter can reach the kitchen pass');
   for (const stop of CAFE_SERVICE_STOPS) {
     assert.equal(navBlocked(stop.x, stop.z), false, `service point ${stop.id} is clear`);
     assert.ok(findWalkPath(WAITER_HOME, [stop.x, 0, stop.z], { strict: true }), `waiter can reach ${stop.id}`);

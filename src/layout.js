@@ -95,10 +95,10 @@ export const CAFE_SEATS = [
     { id: `${table.id}-west`, x: table.x - 1.15, z: table.z, yaw: Math.PI / 2, tableId: table.id, style: 'chair' },
     { id: `${table.id}-east`, x: table.x + 1.15, z: table.z, yaw: -Math.PI / 2, tableId: table.id, style: 'chair' },
   ]),
-  { id: 'booth-a-1', x: -7.05, z: 0.0, yaw: Math.PI / 2, tableId: 'booth-a', style: 'booth' },
-  { id: 'booth-a-2', x: -7.05, z: 1.1, yaw: Math.PI / 2, tableId: 'booth-a', style: 'booth' },
-  { id: 'booth-b-1', x: -7.05, z: 3.7, yaw: Math.PI / 2, tableId: 'booth-b', style: 'booth' },
-  { id: 'booth-b-2', x: -7.05, z: 4.8, yaw: Math.PI / 2, tableId: 'booth-b', style: 'booth' },
+  { id: 'booth-a-1', x: -7.55, z: 0.0, yaw: Math.PI / 2, tableId: 'booth-a', style: 'booth' },
+  { id: 'booth-a-2', x: -7.55, z: 1.1, yaw: Math.PI / 2, tableId: 'booth-a', style: 'booth' },
+  { id: 'booth-b-1', x: -7.55, z: 3.7, yaw: Math.PI / 2, tableId: 'booth-b', style: 'booth' },
+  { id: 'booth-b-2', x: -7.55, z: 4.8, yaw: Math.PI / 2, tableId: 'booth-b', style: 'booth' },
   ...CAFE_BAR_STOOLS.map((seat) => ({ ...seat, tableId: 'bar', style: 'stool' })),
 ];
 export const CAFE_SERVICE_STOPS = [
@@ -121,12 +121,9 @@ export const CAFE_SERVICE_STOPS = [
 ];
 export const CAFE_FURNITURE = [
   ...CAFE_TABLES.map((table) => ({ x: table.x, z: table.z, w: table.w, d: table.d })),
-  ...CAFE_BOOTHS.map((booth) => ({ x: booth.x - 0.62, z: booth.z, w: 0.18, d: booth.depth })),
+  ...CAFE_BOOTHS.map((booth) => ({ x: booth.x - 0.67, z: booth.z, w: 0.14, d: booth.depth + 0.12 })),
 ];
-export const CAFE_EXTERIOR_BLOCKERS = [
-  { x: 0.15, z: 8.45, w: 1.1, d: 0.9 },
-  { x: 4.65, z: 8.45, w: 1.1, d: 0.9 },
-];
+export const CAFE_EXTERIOR_BLOCKERS = []; // The entrance is clear; the old mascot plinths were removed.
 
 /**
  * Where each product is shelved: the middle of its slot, the board's height, how
@@ -205,8 +202,9 @@ export const CHECKOUT = [3.8, 0, -4.05];
 export const LOU_HOME = [3.8, 0, -6.35];                    // counter host behind the service bar
 export const BOB_HOME = [-7.0, 0, -3.35];                  // Bob's kitchen/barista station
 export const WAITER_HOME = [6.4, 0, -1.8];                 // dining-room service station
+export const KITCHEN_PASS = [-6.7, 0, -1.82];                 // just outside the kitchen pass
 export const MANAGER_HOME = [-5.0, 0, -3.25];              // cafe manager near the kitchen pass
-export const PLAYER_HOME = [4.5, 0, 4.9];
+export const PLAYER_HOME = [1.1, 0, -6.18];
 
 export const CAT_PATROLS = [
   [[-8.2, -1.7], [-8.2, 5.7], [-5.2, 5.7], [-5.2, -1.7]],

@@ -1,4 +1,5 @@
 import { PIECES, PIECE_BY_ID, isStanding, canPlace, placementProblem, CAFE_SEATS } from './layout.js';
+import { CAFE_MENU, CAFE_MENU_BY_ID } from './menu.js';
 
 /**
  * Venture Cafe's authoritative cafe simulation.
@@ -43,13 +44,13 @@ export const PRODUCTS = [
   { id: 'chips', name: 'Potato chips', short: 'Chips', category: 'Snacks', section: 'dry', cost: 1.05, price: 2.79, shelfLife: 75, caseSize: 10, demand: 1.2, color: '#f4cf2a', kind: 'bag', tier: 2, fixture: 'shelf-5', description: 'The impulse buy of the neighborhood.' },
   { id: 'cookies', name: 'Chocolate chip cookies', short: 'Cookies', category: 'Snacks', section: 'dry', cost: 1.2, price: 2.99, shelfLife: 60, caseSize: 8, demand: 0.85, color: '#c8903f', kind: 'box', tier: 3, fixture: 'shelf-6', description: 'Sweet, packaged and popular after school.' },
   { id: 'candybar', name: 'Chocolate bar', short: 'Candy bar', category: 'Snacks', section: 'dry', cost: 0.4, price: 1.29, shelfLife: 150, caseSize: 24, demand: 1.1, color: '#5a2e18', kind: 'bar', tier: 3, fixture: 'shelf-7', description: 'Cheap, small and always by the register in spirit.' },
-  { id: 'orangejuice', name: 'Orange juice · 52 oz', short: 'Orange juice', category: 'Drinks', section: 'chilled', cost: 2.2, price: 4.49, shelfLife: 12, caseSize: 6, demand: 0.7, color: '#f5a21e', kind: 'carton', tier: 2, fixture: 'cooler-1', description: 'Chilled and breakfast-bound.' },
+  { id: 'orangejuice', name: 'Orange juice · 52 oz', short: 'Orange juice', category: 'Drinks', section: 'chilled', cost: 2.2, price: 4.49, shelfLife: 12, caseSize: 6, demand: 0.7, color: '#f5a21e', kind: 'carton', tier: 1, description: 'Chilled and breakfast-bound.' },
   { id: 'bacon', name: 'Sliced bacon', short: 'Bacon', category: 'Meat', section: 'chilled', cost: 3.1, price: 6.29, shelfLife: 14, caseSize: 6, demand: 0.6, color: '#a8231c', kind: 'tray', tier: 3, fixture: 'cooler-1', description: 'Weekend favorite. Keep it cold.' },
   { id: 'sourcream', name: 'Sour cream', short: 'Sour cream', category: 'Dairy', section: 'chilled', cost: 0.95, price: 2.29, shelfLife: 16, caseSize: 8, demand: 0.45, color: '#f3f1e6', kind: 'tub', tier: 3, fixture: 'cooler-2', description: 'A slow mover, but the tacos need it.' },
 ];
 
 // Tier 1 is the everyday basics. A few established lines, which already have their own space, open at tier 2.
-const TIER_TWO_LINES = new Set(['tomatoes', 'yogurt', 'cheese', 'butter', 'deli', 'coffee', 'pizza', 'icecream']);
+const TIER_TWO_LINES = new Set(['yogurt', 'deli', 'pizza', 'icecream']);
 for (const product of PRODUCTS) product.tier ??= TIER_TWO_LINES.has(product.id) ? 2 : 1;
 export const PRODUCT_BY_ID = Object.fromEntries(PRODUCTS.map((p) => [p.id, p]));
 
@@ -84,9 +85,9 @@ export const FIXTURE_BY_ID = Object.fromEntries(FIXTURES.map((f) => [f.id, f]));
 for (const fixture of FIXTURES) fixture.products = PRODUCTS.filter((p) => p.fixture === fixture.id).map((p) => p.id);
 for (const fixture of FIXTURES) fixture.tier = Math.min(...fixture.products.map((id) => PRODUCT_BY_ID[id].tier));
 export const STAFF = [
-  { id: 'lou', name: 'Lou Rivera', role: 'Counter host · guest orders', character: 'gent', wage: 14, color: '#e0b982' },
-  { id: 'bob', name: 'Bob', role: 'Barista · coffee and breakfast drinks', character: 'barista', wage: 12, color: '#64a9a3' },
-  { id: 'waiter', name: 'Waiter', role: 'Dining room · table service', character: 'waiter', wage: 15, color: '#c5a06a' },
+  { id: 'lou', name: 'Lou Rivera', role: 'Counter host · guest orders', character: 'gent', wage: 14, color: '#e0b982', quality: 86 },
+  { id: 'bob', name: 'Bob', role: 'Barista · breakfast preparation', character: 'barista', wage: 12, color: '#64a9a3', quality: 88 },
+  { id: 'waiter', name: 'Waiter', role: 'Dining room · table service', character: 'waiter', wage: 15, color: '#c5a06a', quality: 82 },
 ];
 export const PURCHASING_MANAGER = { id: 'rafael', name: 'Rafael Ortiz', role: 'Purchasing manager · supplier orders', character: 'suit', wage: 18, hireCost: 300, unlockLevel: 5, cashReserve: 240, firstReviewDelay: 5, reviewInterval: 30, maxLinesPerReview: 3 };
 
@@ -150,7 +151,7 @@ export const REVIEW_BANK = Object.freeze({
     'Fresh toast, hot coffee and a sunny-side-up egg cooked perfectly.',
     'This place has real neighborhood energy. I would rather eat here than at a chain.',
     'Quick service without feeling rushed. The crew make it feel like a local place.',
-    'The little egg mascot outside makes me smile every morning. Breakfast is excellent too.',
+    'The cafe sign makes me smile every morning. Breakfast is excellent too.',
     'A lovely cafe for a slow morning. The omelette was soft and the juice was fresh.',
     'Everything came out hot and the staff were welcoming.',
   ],
@@ -158,7 +159,7 @@ export const REVIEW_BANK = Object.freeze({
     'A dependable neighborhood cafe. A couple of dishes take a little longer, but the coffee is worth it.',
     'Friendly crew and a good breakfast menu. Could use a little more room at peak time.',
     'The eggs were excellent and the booths are comfortable. Busy around brunch, so plan accordingly.',
-    'Good local cafe with a bit of personality. The mascots are part of the charm.',
+    'Good local cafe with a bit of personality. The dining room has real charm.',
     'Usually has what I want. I wish the toast came out with the eggs a little more often.',
     'Much better than a quick-stop chain. A short wait today, but the service was great.',
     'Fair prices, helpful people and a good cup of coffee. Four stars because the queue can build up.',
@@ -206,7 +207,7 @@ const STARTING_CASH = 1250;
 const CREDIT_LIMIT = 1800;
 const DAY_OPEN = 7 * 60;
 const DAY_CLOSE = 21 * 60;
-/** The last shopper is let in this long before closing, so everyone is served before the shutters come down. */
+/** The last diner is let in this long before closing, so everyone is served before the shutters come down. */
 const LAST_CALL = DAY_CLOSE - 30;
 const EXPIRY_BUFFER = 1e-8;
 const STAFF_PAYROLL = STAFF.reduce((n, s) => n + s.wage, 0);
@@ -330,22 +331,33 @@ export function loadGameState(serialized) {
     state.dayStats ??= {};
     state.dayStats.catLoved ??= 0;
     state.dayStats.catAnnoyed ??= 0;
+    state.dayStats.foodQualityTotal ??= 0;
+    state.dayStats.serviceQualityTotal ??= 0;
+    state.dayStats.ordersServed ??= 0;
     state.reviewSequence ??= Math.max(0, ...state.reviews.map((review) => review.id || 0));
     state.staffWork ??= { stage: 'idle', productId: null, timer: 0, duration: 0, moved: 0 };
     state.waiterWork ??= { stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 };
     for (const customer of state.customers) {
       customer.arrivalDuration ??= 2.4;
       customer.arrivalTimer ??= 0;
-      if (!customer.serviceStatus) {
-        const seat = CAFE_SEATS.find((candidate) => candidate.id === customer.seatId);
-        customer.serviceStatus = customer.phase === 'browsing' && seat && seat.style !== 'stool' ? 'waiting' : 'served';
+      if (!customer.serviceStatus) customer.serviceStatus = customer.phase === 'browsing' ? 'waiting' : 'served';
+      const seat = CAFE_SEATS.find((candidate) => candidate.id === customer.seatId);
+      if (customer.phase === 'browsing' && seat && !customer.orderedMenuId) {
+        customer.serviceStatus = 'waiting';
+        customer.servedAt = null;
+        customer.arrivalTimer = 0;
+        customer.menuChoiceId ??= 'scrambled-eggs';
+        customer.phaseTimer = Math.max(customer.phaseTimer ?? 0, 12);
       }
+      customer.foodQuality ??= null;
+      customer.serviceQuality ??= null;
     }
     state.experience ??= 0;
     state.purchasingManagerHired ??= false;
     state.automaticPurchasingEnabled ??= true;
     state.nextAutoOrderAt ??= state.minute + (state.purchasingManagerHired ? PURCHASING_MANAGER.firstReviewDelay : 35);
-    state.playerPosition ??= { x: 4.5, z: 5.2 };
+    state.playerPosition ??= { x: 1.1, z: -6.18 };
+    if (Math.abs(state.playerPosition.x - 4.5) < 0.1 && Math.abs(state.playerPosition.z - 5.2) < 0.1) state.playerPosition = { x: 1.1, z: -6.18 };
     state.dailyCosts.payroll = STAFF_PAYROLL + (state.purchasingManagerHired ? PURCHASING_MANAGER.wage : 0);
     // Give existing saves a one-time, prepaid opening reserve so the floor lead
     // can demonstrate automatic replenishment immediately after this update.
@@ -398,7 +410,7 @@ export function createGameState(seed = 20261031) {
     purchasingManagerHired: false,
     automaticPurchasingEnabled: true,
     nextAutoOrderAt: DAY_OPEN + 35,
-    playerPosition: { x: 4.5, z: 5.2 },
+    playerPosition: { x: 1.1, z: -6.18 },
     started: false,
     paused: true,
     dayEnded: false,
@@ -416,7 +428,7 @@ export function createGameState(seed = 20261031) {
     reviews: OPENING_REVIEWS.map((review) => ({ ...review })).reverse(),
     reviewSequence: OPENING_REVIEWS.length,
     random,
-    dayStats: { revenue: 0, unitsSold: 0, customers: 0, complaints: 0, waste: 0, purchases: 0, grossProfit: 0, stockouts: 0, catLoved: 0, catAnnoyed: 0 },
+    dayStats: { revenue: 0, unitsSold: 0, customers: 0, complaints: 0, waste: 0, purchases: 0, grossProfit: 0, stockouts: 0, catLoved: 0, catAnnoyed: 0, foodQualityTotal: 0, serviceQualityTotal: 0, ordersServed: 0 },
     lifetime: { revenue: 0, customers: 0, complaints: 0, waste: 0, days: 0 },
     dailyCosts: { rent: 24, payroll: STAFF_PAYROLL, utilities: 8 },
     supplierOrders: 0,
@@ -650,15 +662,16 @@ export function buildBasket(state, resident) {
 }
 
 function spawnCustomer(state) {
-  if (state.customers.length >= Math.min(10, CAFE_SEATS.length)) return null;
+  const diningSeats = CAFE_SEATS.filter((candidate) => candidate.style !== 'stool');
+  if (state.customers.length >= Math.min(10, diningSeats.length)) return null;
   const occupiedSeats = new Set(state.customers.map((customer) => customer.seatId).filter(Boolean));
-  const seat = CAFE_SEATS.find((candidate) => !occupiedSeats.has(candidate.id));
+  const seat = diningSeats.find((candidate) => !occupiedSeats.has(candidate.id));
   if (!seat) return null;
   const resident = chooseResident(state);
-  const basket = buildBasket(state, resident);
   const catEncounter = rollCatEncounter(state, resident.cats);
-  // Guests spend their visit at an assigned cafe seat before the check closes.
-  const browseTime = 12 + state.random() * 5 + basket.length * 1.4 + (catEncounter.catReaction === 'delighted' ? 1.2 : catEncounter.catReaction === 'annoyed' ? -0.7 : 0);
+  const menuChoices = CAFE_MENU.filter((item) => Object.keys(item.ingredients ?? {}).every((productId) => isAvailable(state, productId)));
+  const menuChoice = menuChoices[Math.floor(state.random() * menuChoices.length)] ?? CAFE_MENU_BY_ID['scrambled-eggs'];
+  const browseTime = 12 + state.random() * 5 + (catEncounter.catReaction === 'delighted' ? 1.2 : catEncounter.catReaction === 'annoyed' ? -0.7 : 0);
   const customer = {
     id: ++state.customerSequence,
     residentId: resident.id,
@@ -666,15 +679,20 @@ function spawnCustomer(state) {
     name: resident.name,
     reviewName: `${resident.full.split(' ')[0][0]}. ${resident.full.split(' ').slice(-1)[0]}`,
     tag: resident.tag,
-    thrift: resident.thrift,
     ...catEncounter,
-    demandId: basket[0].productId,
-    basket,
+    menuChoiceId: menuChoice.id,
+    orderedMenuId: null,
+    orderTakenAt: null,
+    arrivedAt: state.minute,
+    servedAt: null,
+    foodQuality: null,
+    serviceQuality: null,
+    ingredientCoverage: null,
+    foodCost: 0,
     seatId: seat.id,
     arrivalDuration: 2.4,
     arrivalTimer: 2.4,
-    serviceStatus: seat.style === 'stool' ? 'served' : 'waiting',
-    servedAt: null,
+    serviceStatus: 'waiting',
     phase: 'browsing',
     phaseTotal: browseTime,
     phaseTimer: browseTime,
@@ -685,7 +703,7 @@ function spawnCustomer(state) {
   state.customers.push(customer);
   state.dayStats.customers += 1;
   state.lifetime.customers += 1;
-  pushEvent(state, 'customer', `${resident.name} came in.`, `${resident.tag} · ${basket.length} lines in the basket`);
+  pushEvent(state, 'customer', `${resident.name} took a seat.`, 'Dining room · waiting to order');
   return customer;
 }
 
@@ -835,6 +853,76 @@ function pickReviewText(state, bank, product, catName = 'the cafe cat') {
     .replaceAll('{{cat}}', catName);
 }
 
+const CAFE_QUALITY_REVIEW_BANK = Object.freeze({
+  excellent: [
+    'Beautifully cooked eggs, hot coffee and a genuinely thoughtful welcome. I will be back.',
+    'Everything arrived fresh and at the right temperature. The service felt personal without hovering.',
+    'A proper neighborhood breakfast: excellent food, quick service and a table ready when we arrived.',
+    'The kitchen clearly knows its craft. The waiter checked in at exactly the right time.',
+  ],
+  good: [
+    'A very good breakfast and friendly service. The coffee was strong and the eggs were cooked just right.',
+    'Comfortable room, good portions and attentive staff. A little wait, but worth it.',
+    'Fresh food and a warm welcome. The team handled a busy morning well.',
+  ],
+  mixed: [
+    'The food was decent, but the service was uneven. I had to wait longer than expected for my order.',
+    'A pleasant cafe, though my eggs were a little overdone and the table service could be sharper.',
+    'Some parts of breakfast were lovely; other parts felt rushed. There is room to improve.',
+  ],
+  foodPoor: [
+    'The service was polite, but the breakfast itself was disappointing. My meal did not taste freshly prepared.',
+    'A friendly welcome cannot make up for overcooked eggs and tired ingredients. Please tighten kitchen quality.',
+    'My order arrived, but the food was lukewarm and poorly prepared.',
+  ],
+  servicePoor: [
+    'The food was good once it arrived, but nobody took my order promptly and the wait was frustrating.',
+    'The kitchen did its part. Table service was slow and I had to ask twice about my breakfast.',
+    'A decent meal, let down by inattentive service and a long wait.',
+  ],
+  poor: [
+    'A disappointing visit from start to finish: a long wait and a poorly prepared breakfast.',
+    'The order was late and the food was not good. The cafe needs to improve both kitchen and table service.',
+    'I would not rush back. The meal and the service both missed the mark today.',
+  ],
+});
+
+function leaveCafeQualityReview(state, customer) {
+  const foodQuality = Math.max(0, Math.min(100, Number(customer.foodQuality) || 0));
+  const serviceQuality = Math.max(0, Math.min(100, Number(customer.serviceQuality) || 0));
+  const overall = foodQuality * 0.55 + serviceQuality * 0.45;
+  const chance = overall < 58 ? 0.72 : overall < 72 ? 0.56 : 0.38;
+  if (state.random() >= chance) return null;
+  const rating = overall >= 91 ? 5 : overall >= 78 ? 4 : overall >= 65 ? 3 : overall >= 50 ? 2 : 1;
+  const bankName = foodQuality < 58 && serviceQuality < 58 ? 'poor'
+    : foodQuality < serviceQuality - 8 ? 'foodPoor'
+      : serviceQuality < foodQuality - 8 ? 'servicePoor'
+        : overall >= 86 ? 'excellent'
+          : overall >= 72 ? 'good' : 'mixed';
+  const bank = CAFE_QUALITY_REVIEW_BANK[bankName];
+  const review = {
+    id: ++state.reviewSequence,
+    name: customer.reviewName ?? customer.name,
+    rating,
+    text: bank[Math.floor(state.random() * bank.length)],
+    day: state.day,
+    minute: state.minute,
+    source: state.random() < 0.22 ? 'Local guide' : 'Verified visit',
+    outcome: bankName === 'foodPoor' ? 'food-poor' : bankName === 'servicePoor' ? 'service-poor' : bankName,
+    productId: null,
+    menuItemId: customer.orderedMenuId ?? null,
+    foodQuality,
+    serviceQuality,
+  };
+  state.reviews.unshift(review);
+  state.reviews.length = Math.min(state.reviews.length, 48);
+  customer.reviewLeft = true;
+  const impact = ({ 1: -0.48, 2: -0.28, 3: -0.06, 4: 0.05, 5: 0.14 })[rating];
+  state.reputation = Math.max(0, Math.min(100, state.reputation + impact));
+  pushEvent(state, 'review', `${customer.name} left a ${rating}-star review.`, review.text);
+  return review;
+}
+
 /**
  * Publish an occasional post-visit review. Unhappy customers are substantially
  * more likely to write one, and a one-star review costs more neighborhood trust
@@ -842,6 +930,7 @@ function pickReviewText(state, bank, product, catName = 'the cafe cat') {
  */
 export function maybeLeaveReview(state, customer) {
   if (customer.reviewLeft) return null;
+  if (Number.isFinite(customer.foodQuality) && Number.isFinite(customer.serviceQuality)) return leaveCafeQualityReview(state, customer);
   const outcome = customer.result ?? 'sold';
   const catReaction = customer.catReaction ?? 'indifferent';
   // A cat rave needs a happy visit; a cat grumble needs a visit that got as far as the till.
@@ -930,8 +1019,16 @@ export function reviewSummary(state) {
 function finishCustomersAtClose(state) {
   for (const customer of state.customers) {
     if (customer.phase === 'browsing') {
-      customer.serviceStatus = 'served';
-      checkoutCustomer(state, customer);
+      if (customer.orderedMenuId) {
+        if (!Number.isFinite(customer.foodQuality)) prepareCafeMeal(state, customer);
+        if (!Number.isFinite(customer.serviceQuality)) finishCafeServiceQuality(state, customer);
+        customer.serviceStatus = 'served';
+        checkoutCafeOrder(state, customer);
+      } else {
+        customer.foodQuality = 0;
+        customer.serviceQuality = 0;
+        customer.result = 'not-served';
+      }
     }
     maybeLeaveReview(state, customer);
   }
@@ -963,6 +1060,8 @@ function endDay(state) {
     net: Math.round((state.dayStats.grossProfit - total - state.dayStats.waste) * 100) / 100,
     cash: state.cash,
     debt: state.debt,
+    averageFoodQuality: state.dayStats.ordersServed ? Math.round(state.dayStats.foodQualityTotal / state.dayStats.ordersServed) : 0,
+    averageServiceQuality: state.dayStats.ordersServed ? Math.round(state.dayStats.serviceQualityTotal / state.dayStats.ordersServed) : 0,
   };
   pushEvent(state, 'close', `Day ${state.day} is in the books.`, `${money(state.dayStats.revenue)} sales · ${money(total)} running costs`);
   state.dayEnded = true;
@@ -985,7 +1084,7 @@ export function startNextDay(state) {
   state.waiterWork = { stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 };
   state.nextAutoOrderAt = DAY_OPEN + (state.purchasingManagerHired ? PURCHASING_MANAGER.firstReviewDelay : 35);
   state.nextArrival = DAY_OPEN + (12 + state.random() * 20) / trafficMultiplier(state);
-  state.dayStats = { revenue: 0, unitsSold: 0, customers: 0, complaints: 0, waste: 0, purchases: 0, grossProfit: 0, stockouts: 0, catLoved: 0, catAnnoyed: 0 };
+  state.dayStats = { revenue: 0, unitsSold: 0, customers: 0, complaints: 0, waste: 0, purchases: 0, grossProfit: 0, stockouts: 0, catLoved: 0, catAnnoyed: 0, foodQualityTotal: 0, serviceQualityTotal: 0, ordersServed: 0 };
   pushEvent(state, 'note', `Day ${state.day} begins.`, 'Fresh start. Check the cold case before the rush.');
   return true;
 }
@@ -1072,33 +1171,94 @@ function advancePurchasingManager(state) {
   }
 }
 
+function cafeStaffQuality(id) {
+  return STAFF.find((person) => person.id === id)?.quality ?? 70;
+}
+
+function prepareCafeMeal(state, customer) {
+  const menuItem = CAFE_MENU_BY_ID[customer.orderedMenuId ?? customer.menuChoiceId] ?? CAFE_MENU_BY_ID['scrambled-eggs'];
+  customer.orderedMenuId = menuItem.id;
+  let requiredUnits = 0, fulfilledUnits = 0, freshnessTotal = 0, foodCost = 0;
+  for (const [productId, required] of Object.entries(menuItem.ingredients ?? {})) {
+    const product = PRODUCT_BY_ID[productId];
+    const batches = sortOldestFirst(state.shelves[productId] ?? []);
+    requiredUnits += required;
+    let remaining = required;
+    for (const batch of batches) {
+      if (remaining <= 0) break;
+      if (batch.qty <= 0 || isExpired(batch, productNow(state))) continue;
+      const take = Math.min(remaining, batch.qty);
+      batch.qty -= take;
+      remaining -= take;
+      fulfilledUnits += take;
+      foodCost += take * (batch.unitCost ?? product?.cost ?? 0);
+      const daysLeft = Math.max(0, batch.expiresAt - productNow(state));
+      const freshness = product?.shelfLife ? Math.min(100, 62 + 38 * daysLeft / product.shelfLife) : 90;
+      freshnessTotal += freshness * take;
+    }
+    state.shelves[productId] = (state.shelves[productId] ?? []).filter((batch) => batch.qty > 0);
+  }
+  const coverage = requiredUnits ? fulfilledUnits / requiredUnits : 1;
+  const ingredientFreshness = fulfilledUnits ? freshnessTotal / fulfilledUnits : 0;
+  const kitchenSkill = cafeStaffQuality('bob') * 0.72 + 84 * 0.28;
+  customer.foodQuality = Math.max(1, Math.min(100, Math.round(kitchenSkill * 0.7 + ingredientFreshness * 0.3 - (1 - coverage) * 45)));
+  customer.ingredientCoverage = Math.round(coverage * 100);
+  customer.foodCost = Math.round(foodCost * 100) / 100;
+  customer.orderedMenuName = menuItem.name;
+  if (coverage < 1) {
+    pushEvent(state, 'warning', `The kitchen was short on ingredients for ${customer.name}'s order.`,
+      `${menuItem.name} · ${Math.round(coverage * 100)}% of the recipe was available`);
+  }
+}
+
+function finishCafeServiceQuality(state, customer) {
+  const elapsed = Math.max(0, state.minute - (customer.arrivedAt ?? customer.orderTakenAt ?? state.minute));
+  const serviceBase = cafeStaffQuality('lou') * 0.36 + cafeStaffQuality('waiter') * 0.64;
+  const timingFactor = Math.max(0.62, 1.04 - Math.max(0, elapsed - 2) * 0.025);
+  customer.serviceWait = Math.round(elapsed * 10) / 10;
+  customer.serviceQuality = Math.max(1, Math.min(100, Math.round(serviceBase * timingFactor)));
+}
+
+function checkoutCafeOrder(state, customer) {
+  const menuItem = CAFE_MENU_BY_ID[customer.orderedMenuId];
+  if (!menuItem) return checkoutCustomer(state, customer);
+  const revenue = menuItem.price;
+  const foodCost = customer.foodCost ?? 0;
+  customer.bought = 1;
+  customer.spend = revenue;
+  customer.result = customer.foodQuality < 55 ? 'poor-meal' : customer.serviceQuality < 55 ? 'poor-service' : 'served';
+  state.cash = Math.round((state.cash + revenue) * 100) / 100;
+  state.dayStats.revenue = Math.round((state.dayStats.revenue + revenue) * 100) / 100;
+  state.dayStats.unitsSold += 1;
+  state.dayStats.grossProfit = Math.round((state.dayStats.grossProfit + revenue - foodCost) * 100) / 100;
+  state.dayStats.foodQualityTotal += customer.foodQuality ?? 0;
+  state.dayStats.serviceQualityTotal += customer.serviceQuality ?? 0;
+  state.dayStats.ordersServed += 1;
+  state.lifetime.revenue = Math.round((state.lifetime.revenue + revenue) * 100) / 100;
+  pushEvent(state, 'sale', `${customer.name} paid for ${menuItem.name}.`,
+    `Food ${customer.foodQuality}/100 · service ${customer.serviceQuality}/100 · ${money(revenue)}`);
+  awardStoreExperience(state, Math.max(12, 18 + Math.floor(revenue * 1.4) + Math.round((customer.foodQuality + customer.serviceQuality) / 20)));
+}
+
 function advanceWaiterService(state, deltaMinutes) {
   let remaining = deltaMinutes;
   let transitions = 0;
-  while (remaining > 1e-8 && transitions < 8) {
+  while (remaining > 1e-8 && transitions < 12) {
     let task = state.waiterWork;
     if (!task || task.stage === 'idle') {
       const next = state.customers.find((customer) =>
         customer.phase === 'browsing' && customer.serviceStatus === 'waiting' && (customer.arrivalTimer ?? 0) <= 0);
       if (!next) return;
       next.serviceStatus = 'serving';
-      task = state.waiterWork = {
-        stage: 'walking-to-table',
-        customerId: next.id,
-        seatId: next.seatId,
-        timer: 2.6,
-        duration: 2.6,
-      };
-      pushEvent(state, 'staff', `The waiter is heading to ${next.name}'s table.`, 'Table service · breakfast is on the way.');
+      task = state.waiterWork = { stage: 'walking-to-table', customerId: next.id, seatId: next.seatId, timer: 1.3, duration: 1.3 };
+      pushEvent(state, 'staff', `The waiter is greeting ${next.name}.`, 'Walking to the table · ready to take the breakfast order.');
     }
-
     const customer = state.customers.find((entry) => entry.id === task.customerId);
     if (!customer || customer.phase !== 'browsing') {
       state.waiterWork = { stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 };
       transitions += 1;
       continue;
     }
-
     const step = Math.min(remaining, Math.max(0, task.timer));
     task.timer -= step;
     remaining -= step;
@@ -1106,14 +1266,36 @@ function advanceWaiterService(state, deltaMinutes) {
     transitions += 1;
 
     if (task.stage === 'walking-to-table') {
+      task.stage = 'taking-order';
+      task.timer = task.duration = 0.55;
+    } else if (task.stage === 'taking-order') {
+      const menuItem = CAFE_MENU_BY_ID[customer.menuChoiceId] ?? CAFE_MENU[1];
+      customer.orderedMenuId = menuItem.id;
+      customer.orderedMenuName = menuItem.name;
+      customer.orderTakenAt = state.minute;
+      customer.serviceStatus = 'ordered';
+      task.stage = 'returning-to-kitchen';
+      task.timer = task.duration = 0.45;
+      pushEvent(state, 'staff', `The waiter took ${customer.name}'s order.`, `${menuItem.name} · sent to kitchen`);
+    } else if (task.stage === 'returning-to-kitchen') {
+      task.stage = 'preparing-order';
+      task.timer = task.duration = 0.9;
+      pushEvent(state, 'staff', `Bob is preparing ${customer.name}'s order.`, `${customer.orderedMenuName} · breakfast made to order`);
+    } else if (task.stage === 'preparing-order') {
+      prepareCafeMeal(state, customer);
+      task.stage = 'walking-to-delivery';
+      task.timer = task.duration = 0.9;
+    } else if (task.stage === 'walking-to-delivery') {
       task.stage = 'presenting';
-      task.timer = task.duration = 0.5;
+      task.timer = task.duration = 0.4;
     } else if (task.stage === 'presenting') {
+      finishCafeServiceQuality(state, customer);
       customer.serviceStatus = 'served';
       customer.servedAt = state.minute;
       task.stage = 'returning';
-      task.timer = task.duration = 1.8;
-      pushEvent(state, 'staff', `The waiter served ${customer.name} their breakfast.`, 'Meal delivered · the diner can enjoy their visit.');
+      task.timer = task.duration = 0.8;
+      pushEvent(state, 'staff', `The waiter served ${customer.name}'s ${customer.orderedMenuName}.`,
+        `Food ${customer.foodQuality}/100 · service ${customer.serviceQuality}/100`);
     } else {
       state.waiterWork = { stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 };
     }
@@ -1130,7 +1312,8 @@ function advanceCustomerPhases(state, deltaMinutes) {
     customer.phaseTimer -= deltaMinutes;
     if (customer.phaseTimer > 0) continue;
     if (customer.phase === 'browsing') {
-      checkoutCustomer(state, customer);
+      if (customer.orderedMenuId) checkoutCafeOrder(state, customer);
+      else checkoutCustomer(state, customer);
       customer.phase = 'checkout';
       customer.phaseTotal = 3.8;
       customer.phaseTimer = customer.phaseTotal;
