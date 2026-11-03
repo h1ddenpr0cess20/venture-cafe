@@ -8,6 +8,7 @@ import {
   RESIDENTS, RESIDENT_BY_ID, STAFF, chooseResident, buildBasket, getStoreLevel, getStoreLevelProgress, activeFrameDelta,
 } from '../src/sim.js';
 
+import { CAFE_MENU_BY_ID } from '../src/menu.js';
 function prepareState() {
   const state = createGameState(7);
   state.started = true;
@@ -185,7 +186,7 @@ test('a restored open store advances customer movement and the business clock wi
   state.customers.push({
     id: 9991, character: 'artist', name: 'Maya', tag: 'visitor', demandId: 'apples',
     basket: [{ productId: 'apples', qty: 1 }], phase: 'browsing',
-    phaseTotal: 30, phaseTimer: 30, result: null, bought: 0, spend: 0,
+    phaseTotal: 30, phaseTimer: 30, result: null, bought: 0, spend: 0, serviceStatus: 'served',
   });
   const restored = loadGameState(saveGameState(state));
   assert.ok(restored);
@@ -363,8 +364,7 @@ test('residents buy what they like, never two of them are inside at once, and ar
     const customer = spawnForTest(state);
     seen.set(customer.residentId, (seen.get(customer.residentId) ?? 0) + 1);
     const resident = RESIDENT_BY_ID[customer.residentId];
-    assert.ok(customer.basket.length >= 2 && customer.basket.length <= 3);
-    assert.equal(new Set(customer.basket.map((l) => l.productId)).size, customer.basket.length);
+    assert.ok(CAFE_MENU_BY_ID[customer.menuChoiceId], 'every diner has a dish in mind');
     assert.equal(customer.character, resident.character);
   }
   assert.ok(seen.size >= 14, `${seen.size} different residents in 300 visits`);
@@ -390,16 +390,17 @@ function spawnForTest(state) {
   return state.customers[before] ?? state.customers.at(-1);
 }
 
-test('shoppers want what is on their list even when the shelf is empty, so a bare shelf costs sales', () => {
+test('diners still order when the kitchen is bare, and the missing ingredients cost them food quality', () => {
   const state = prepareState();
   for (const p of PRODUCTS) { state.shelves[p.id] = []; state.stockroom[p.id] = []; }
   state.random = (() => { let v = 11; return () => { v = (v * 16807) % 2147483647; return v / 2147483647; }; })();
   state.minute = 8 * 60;
   const c = spawnForTest(state);
   assert.ok(c, 'a customer still comes in to an empty store');
-  assert.ok(c.basket.length >= 2);
+  assert.ok(CAFE_MENU_BY_ID[c.menuChoiceId], 'they still pick a dish');
   advanceGame(state, 40);
-  assert.ok(state.dayStats.stockouts >= 1, 'their empty-shelf lines were recorded as stockouts');
+  assert.ok(state.events.some((event) => event.type === 'warning' && /short on ingredients/.test(event.message)), 'the kitchen reported the missing ingredients');
+  assert.ok(state.dayStats.foodQualityTotal / Math.max(1, state.dayStats.ordersServed) < 70, 'a bare kitchen turns out poor meals');
 });
 
 test('a price past what a shopper will pay is put back, and the store hears about it', () => {
@@ -473,7 +474,7 @@ test('the range is in three tiers by store level, and the new lines also need th
   assert.ok(tierOf(2).some((p) => !p.fixture), 'some established lines open at tier 2');
   assert.ok(tierOf(1).every((p) => !p.fixture), 'tier 1 needs nothing bought');
   assert.deepEqual(availableProducts(state).map((p) => p.id), tierOf(1).map((p) => p.id));
-  assert.equal(placeOrder(state, 'tomatoes', 1).reason, 'not-stocked');
+  assert.equal(placeOrder(state, 'yogurt', 1).reason, 'not-stocked');
   assert.equal(placeOrder(state, 'oranges', 1).reason, 'not-stocked');
 
   // A fixture waits for the level that opens its tier, then for the cash.
@@ -482,7 +483,7 @@ test('the range is in three tiers by store level, and the new lines also need th
   assert.equal(buyFixture(state, 'bin-1').reason, 'level-too-low');
   state.experience = 500;
   assert.equal(getStoreLevel(state), 3);
-  assert.ok(isAvailable(state, PRODUCT_BY_ID.tomatoes), 'an established tier 2 line opens with the level');
+  assert.ok(isAvailable(state, PRODUCT_BY_ID.yogurt), 'an established tier 2 line opens with the level');
   assert.ok(!isAvailable(state, PRODUCT_BY_ID.oranges), 'a new line still needs its bin');
   state.cash = 10;
   assert.equal(buyFixture(state, 'bin-1').reason, 'insufficient-funds');
