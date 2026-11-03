@@ -455,7 +455,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     for (const y of [0.5, 1.1, 1.7]) {
       box(scene, bb.x - 0.18, y, bb.z, 0.34, 0.05, bb.d - 0.1, mats.woodLight);
       for (const offset of [-2.2, -0.8, 0.7, 2.1]) {
-        cylinder(GFX, scene, bb.x - 0.18 + offset, y + 0.14, bb.z, 0.07, 0.07, 0.22,
+        cylinder(scene, bb.x - 0.18 + offset, y + 0.14, bb.z, 0.07, 0.07, 0.22,
           std('#e5dcc8', { roughness: 0.5 }), 18);
       }
     }
