@@ -48,9 +48,9 @@ function updateLoading(label, progress) {
   if (percent) percent.textContent = `${Math.round(progress)}%`;
 }
 
-const audio = createAudio({ storageKey: 'bodega.muted', glue: true });
+const audio = createAudio({ storageKey: 'venture-cafe.muted', glue: true });
 audioMuted = audio.muted;
-updateLoading('Warming the lights and opening the shop floor', 0);
+updateLoading('Warming the cafe and preparing the dining room', 0);
 let world;
 try {
   world = await createVentureCafeWorld($('#world'), updateLoading);
@@ -88,7 +88,7 @@ try {
 } catch (error) {
   console.error('Venture Cafe failed to load:', error);
   const status = $('#loading-status');
-  if (status) status.textContent = 'The shop could not be opened. Check the connection and reload.';
+  if (status) status.textContent = 'The cafe could not be opened. Check the connection and reload.';
   throw error;
 }
 
@@ -141,7 +141,7 @@ function recordNewEvents() {
     } else if (event.type === 'sale') {
       if (!audioMuted) audio.jingle([64, 69, 76], { type: 'triangle', gain: 0.055, length: 0.12 });
     } else if (event.type === 'order') notify(event.message, 'good');
-    else if (event.type === 'staff' && (event.message.includes('put ') || event.message.includes('Rafael Ortiz ordered'))) notify(event.message, 'good');
+    else if (event.type === 'staff' && (event.message.includes('served ') || event.message.includes('Rafael Ortiz ordered'))) notify(event.message, 'good');
     else if (event.type === 'cat') notify(event.message, event.detail?.includes('happier customer') ? 'good' : 'info');
     else if (event.type === 'review') {
       const rating = Number(event.message.match(/(\d)-star/)?.[1] ?? 3);
@@ -168,12 +168,14 @@ function updateHeader() {
   $('#open-pill').querySelector('span').textContent = state.dayEnded ? 'CLOSED' : state.paused ? (state.started ? 'PAUSED' : 'CLOSED') : 'OPEN';
   $('#pause-toggle').textContent = state.paused ? '▶' : 'Ⅱ';
   $('#pause-toggle').title = state.paused ? 'Resume simulation' : 'Pause simulation';
-  $('#foot-customers').textContent = `${state.customers.length} SHOPPERS INSIDE`;
-  $('#foot-traffic').textContent = `FOOTFALL ${trafficLabel(state)}`;
-  const staffTask = state.staffWork ?? { stage: 'idle' };
-  $('#foot-staff').textContent = staffTask.stage === 'walking-to-shelf' ? 'MARISOL ON THE FLOOR'
-    : staffTask.stage === 'stocking' ? 'MARISOL STOCKING'
-      : staffTask.stage === 'walking-back' ? 'MARISOL RETURNING' : `${STAFF.length + (state.purchasingManagerHired ? 1 : 0)} STAFF ON SHIFT`;
+  $('#foot-customers').textContent = `${state.customers.length} DINERS IN THE CAFE`;
+  $('#foot-traffic').textContent = `BREAKFAST TRAFFIC ${trafficLabel(state)}`;
+  const waiterTask = state.waiterWork ?? { stage: 'idle' };
+  const waitingTables = state.customers.filter((customer) => customer.serviceStatus === 'waiting' || customer.serviceStatus === 'serving').length;
+  $('#foot-staff').textContent = waiterTask.stage === 'walking-to-table' || waiterTask.stage === 'presenting'
+    ? 'WAITER SERVING A TABLE'
+    : waitingTables ? `${waitingTables} TABLES WAITING`
+      : `${STAFF.length + (state.purchasingManagerHired ? 1 : 0)} CAFE CREW ON SHIFT`;
   const health = inventoryHealth(state);
   const alertCount = health.expired + health.empty;
   $('#shelf-alert-count').textContent = alertCount;
@@ -181,7 +183,7 @@ function updateHeader() {
   $('#bottom-message').textContent = state.dayStats.complaints
     ? `${state.dayStats.complaints} unhappy customer${state.dayStats.complaints === 1 ? '' : 's'} today. Check the dates.`
     : health.expired ? `${health.expired} expired units need to come off the shelf.`
-      : 'Fresh stock. Fair prices. Good people.';
+      : 'Fresh breakfast. Good coffee. Good people.';
   $('#start-overlay').classList.toggle('hidden', state.started);
   $('#player-controls')?.classList.toggle('hidden', !state.started || state.paused || state.dayEnded || state.gameOver);
   $('#pause-toggle').disabled = !state.started || state.dayEnded;
@@ -220,11 +222,11 @@ function reviewMarkup() {
   return `
     <div class="review-reputation">
       <div class="review-scoreline"><strong>${summary.rating.toFixed(1)}</strong><span class="review-stars">${'★'.repeat(Math.round(summary.rating))}<i>${'☆'.repeat(5 - Math.round(summary.rating))}</i></span></div>
-      <div class="review-score-copy"><b>${summary.count} neighborhood reviews</b><span>${Math.round(state.reputation)} / 100 trust score</span></div>
+      <div class="review-score-copy"><b>${summary.count} cafe reviews</b><span>${Math.round(state.reputation)} / 100 trust score</span></div>
       <div class="rating-distribution">${distribution.map((row) => `<div class="rating-bar"><span>${row.rating}</span><i><b style="width:${row.count / total * 100}%"></b></i><small>${row.count}</small></div>`).join('')}</div>
     </div>
-    <div class="review-footfall"><span><i class="live-dot"></i> ESTIMATED FOOT TRAFFIC</span><strong class="traffic-${trafficLabel(state).toLowerCase()}">${trafficLabel(state)}</strong><small>${state.reputation >= 86 ? 'The block is talking you up.' : state.reputation >= 68 ? 'Regular neighborhood traffic.' : state.reputation >= 45 ? 'Fewer walk-ins than usual.' : 'Word of mouth is keeping people away.'}</small></div>
-    <div class="review-feed-heading"><span>RECENT CUSTOMER POSTS</span><small>NEWEST FIRST</small></div>
+    <div class="review-footfall"><span><i class="live-dot"></i> ESTIMATED DINER TRAFFIC</span><strong class="traffic-${trafficLabel(state).toLowerCase()}">${trafficLabel(state)}</strong><small>${state.reputation >= 86 ? 'The block is talking you up.' : state.reputation >= 68 ? 'Regular neighborhood traffic.' : state.reputation >= 45 ? 'Fewer walk-ins than usual.' : 'Word of mouth is keeping people away.'}</small></div>
+    <div class="review-feed-heading"><span>RECENT DINER REVIEWS</span><small>NEWEST FIRST</small></div>
     <div class="review-stream">${reviews.map((review) => {
       const initials = review.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
       const isNew = recent && review.id === recent.id && review.id > previousReviewSequence;
@@ -235,7 +237,7 @@ function reviewMarkup() {
         <div class="review-person"><span class="review-avatar">${escapeHtml(initials)}</span><span class="review-person-copy"><strong>${escapeHtml(review.name)}</strong><small>${escapeHtml(review.source)} · ${reviewTimestamp(review)}</small></span>${isNew ? '<em>JUST IN</em>' : ''}</div>
         <div class="review-card-stars"><span>${'★'.repeat(review.rating)}<i>${'☆'.repeat(5 - review.rating)}</i></span><small>${tag}</small></div>
         <p>${escapeHtml(review.text)}</p>
-        ${review.outcome === 'expired' ? '<div class="review-response-note">A date-check complaint. Pull the lot and tighten rotation.</div>' : review.outcome === 'cat-annoyed' ? '<div class="review-response-note">A customer found the cats disruptive. Keep checkout and food-contact surfaces clear.</div>' : review.outcome === 'cat-loved' ? '<div class="review-response-note review-response-good">A neighborhood regular for the cats. The bodega charm is working.</div>' : ''}
+        ${review.outcome === 'expired' ? '<div class="review-response-note">An ingredient-quality complaint. Check the kitchen dates.</div>' : review.outcome === 'cat-annoyed' ? '<div class="review-response-note">A diner found the cats disruptive. Keep the counter and dining surfaces clear.</div>' : review.outcome === 'cat-loved' ? '<div class="review-response-note review-response-good">A neighborhood regular for the cats. The cafe mascot charm is working.</div>' : ''}
       </article>`;
     }).join('') || '<div class="empty-state compact">No reviews yet. The neighborhood will have something to say soon.</div>'}</div>
     <div class="review-disclaimer">SIMULATED NEIGHBORHOOD FEEDBACK · REVIEWS CHANGE WITH EVERY VISIT</div>`;
@@ -365,7 +367,7 @@ function expansionPanel() {
   const tiers = TIERS.map((tier) => {
     const open = level >= tier.level;
     const lines = PRODUCTS.filter((p) => p.tier === tier.tier);
-    return `<div class="order-row"><span class="product-swatch" style="--swatch:${open ? '#8baf8c' : '#65716c'}"></span><span class="order-product"><strong>TIER ${tier.tier} · ${escapeHtml(tier.name)}</strong><small>${lines.length} lines · ${open ? 'open' : `opens at store level ${tier.level}`}</small></span></div>`;
+    return `<div class="order-row"><span class="product-swatch" style="--swatch:${open ? '#8baf8c' : '#65716c'}"></span><span class="order-product"><strong>TIER ${tier.tier} · ${escapeHtml(tier.name)}</strong><small>${lines.length} lines · ${open ? 'open' : `opens at cafe level ${tier.level}`}</small></span></div>`;
   }).join('');
   const rows = FIXTURES.map((fixture) => {
     const block = fixtureBlock(state, fixture.id);
@@ -450,7 +452,7 @@ function financePanel() {
     </div>
     <div class="panel-section">
       <div class="section-heading"><div><div class="eyebrow">THE COST OF OPENING</div><h3>Daily overhead</h3></div></div>
-      <div class="cost-list"><div><span>Rent</span><b>${money(state.dailyCosts.rent)}</b></div><div><span>Payroll · 2 staff</span><b>${money(state.dailyCosts.payroll)}</b></div><div><span>Utilities & refrigeration</span><b>${money(state.dailyCosts.utilities)}</b></div><div><span>Interest (added to balance)</span><b>${money(interest)}</b></div><div class="cost-total"><span>Expected daily overhead</span><b>${money(state.dailyCosts.rent + state.dailyCosts.payroll + state.dailyCosts.utilities + interest)}</b></div></div>
+      <div class="cost-list"><div><span>Rent</span><b>${money(state.dailyCosts.rent)}</b></div><div><span>Payroll · ${STAFF.length} staff</span><b>${money(state.dailyCosts.payroll)}</b></div><div><span>Utilities & refrigeration</span><b>${money(state.dailyCosts.utilities)}</b></div><div><span>Interest (added to balance)</span><b>${money(interest)}</b></div><div class="cost-total"><span>Expected daily overhead</span><b>${money(state.dailyCosts.rent + state.dailyCosts.payroll + state.dailyCosts.utilities + interest)}</b></div></div>
     </div>`;
 }
 
@@ -463,32 +465,33 @@ function staffPanel() {
   const managerCard = managerHired ? `
     <div class='manager-card manager-hired'>
       <div class='manager-card-heading'><span class='manager-avatar'>RO</span><span><strong>Rafael Ortiz</strong><small>PURCHASING MANAGER · ON SHIFT</small></span><span class='tag tag-good'>HIRED</span></div>
-      <p>Checks stock coverage and places supplier orders when a line is running low. Orders are paid from register cash, never from your credit line.</p>
+      <p>Checks ingredient coverage and places supplier orders before the kitchen runs short. Orders are paid from register cash, never from your credit line.</p>
       <div class='manager-rule'><span>CASH BUFFER</span><strong>${money(manager.cashReserve)}</strong><small>Held back for rent, wages and day-to-day operations.</small></div>
-      <div class='manager-automation'><div><strong>AUTOMATIC PURCHASING</strong><small>${state.automaticPurchasingEnabled ? 'Rafael is monitoring your shelves.' : 'Automatic orders are paused.'}</small></div><button class='secondary-button' data-action='toggle-auto-purchase'>${state.automaticPurchasingEnabled ? 'PAUSE' : 'RESUME'}</button></div>
+      <div class='manager-automation'><div><strong>AUTOMATIC PURCHASING</strong><small>${state.automaticPurchasingEnabled ? 'Rafael is monitoring kitchen supplies.' : 'Automatic orders are paused.'}</small></div><button class='secondary-button' data-action='toggle-auto-purchase'>${state.automaticPurchasingEnabled ? 'PAUSE' : 'RESUME'}</button></div>
       <div class='fine-print'>Daily wage: ${money(manager.wage)} · Reviews every 30 in-game minutes · Up to three product lines per review, one or two cases each.</div>
     </div>` : `
     <div class='manager-card manager-locked'>
       <div class='manager-card-heading'><span class='manager-avatar'>RO</span><span><strong>Rafael Ortiz</strong><small>PURCHASING MANAGER</small></span><span class='tag ${unlocked ? 'tag-warning' : 'tag-muted'}'>${unlocked ? 'AVAILABLE' : 'LOCKED'}</span></div>
-      <p>Unlock a dedicated purchasing manager who monitors demand, shelf stock and backroom coverage, then places sensible supplier orders for you.</p>
-      <div class='unlock-progress'><div class='unlock-progress-heading'><span>STORE EXPERIENCE</span><strong>LEVEL ${level.level} / ${manager.unlockLevel}</strong></div><div class='unlock-progress-track'><i style='width:${level.progress}%'></i></div><small>${level.experience} XP · ${level.remaining} XP to next level</small></div>
+      <p>Unlock a dedicated purchasing manager who monitors demand, ingredient levels and pantry coverage, then places sensible supplier orders for you.</p>
+      <div class='unlock-progress'><div class='unlock-progress-heading'><span>CAFE EXPERIENCE</span><strong>LEVEL ${level.level} / ${manager.unlockLevel}</strong></div><div class='unlock-progress-track'><i style='width:${level.progress}%'></i></div><small>${level.experience} XP · ${level.remaining} XP to next level</small></div>
       <div class='manager-costs'><div><span>HIRING COST</span><strong>${money(manager.hireCost)}</strong></div><div><span>DAILY WAGE</span><strong>${money(manager.wage)}</strong></div><div><span>UNLOCK</span><strong>LEVEL ${manager.unlockLevel}</strong></div></div>
       <button class='primary-button manager-hire-button' data-action='hire-purchasing-manager' ${canHire ? '' : 'disabled'}>${unlocked ? 'HIRE RAFAEL ↗' : 'REACH LEVEL ' + manager.unlockLevel + ' TO UNLOCK'}</button>
-      <div class='fine-print'>${!unlocked ? 'Build the store through completed customer visits and good service.' : state.cash < manager.hireCost ? 'You have unlocked the role. Build up enough register cash to cover the hiring cost.' : 'Hiring adds his wage to daily payroll. Automatic orders will keep a cash reserve and never borrow.'}</div>
+      <div class='fine-print'>${!unlocked ? 'Build the cafe through completed breakfast service and good service.' : state.cash < manager.hireCost ? 'You have unlocked the role. Build up enough register cash to cover the hiring cost.' : 'Hiring adds his wage to daily payroll. Automatic orders will keep a cash reserve and never borrow.'}</div>
     </div>`;
   const activeStaff = [...STAFF, ...(managerHired ? [manager] : [])];
   return `
     <div class='panel-section'>
-      <div class='section-heading'><div><div class='eyebrow'>YOUR CREW</div><h3>People of the bodega</h3></div><span class='tag tag-good'>${activeStaff.length} ON SHIFT</span></div>
-      <p class='product-description'>Good people make a good store. Your crew is on the clock whenever the shutters are up.</p>
+      <div class='section-heading'><div><div class='eyebrow'>YOUR CREW</div><h3>Venture Cafe crew</h3></div><span class='tag tag-good'>${activeStaff.length} ON SHIFT</span></div>
+      <p class='product-description'>Lou runs the counter, Bob prepares breakfast, and the Waiter looks after the dining room.</p>
       <div class='staff-task-card'>
-        <div class='staff-task-heading'><strong>MARISOL'S FLOOR SHIFT</strong><span>${state.staffWork?.stage === 'idle' ? 'ON STANDBY' : state.staffWork.stage === 'stocking' ? 'STOCKING NOW' : state.staffWork.stage === 'walking-back' ? 'RETURNING TO STOCKROOM' : 'ON THE MOVE'}</span></div>
-        <p>${state.staffWork?.productId ? 'Taking ' + escapeHtml(PRODUCT_BY_ID[state.staffWork.productId].short.toLowerCase()) + ' to the floor.' : 'She checks low shelves automatically and replenishes them from in-date backroom stock.'}</p>
-        <small>Oldest valid expiry first · expired deliveries stay off the shelf</small>
+        <div class='staff-task-heading'><strong>DINING ROOM SERVICE</strong><span>${state.waiterWork?.stage === 'walking-to-table' ? 'EN ROUTE' : state.waiterWork?.stage === 'presenting' ? 'DELIVERING' : state.waiterWork?.stage === 'returning' ? 'RETURNING' : 'ON STANDBY'}</span></div>
+        <p>${state.customers.filter((customer) => customer.serviceStatus === 'waiting').length} tables waiting · ${state.customers.filter((customer) => customer.serviceStatus === 'served' && customer.phase === 'browsing').length} meals being enjoyed.</p>
+        <small>The Waiter carries breakfast on the engine's built-in tray from the kitchen pass to each table and booth.</small>
       </div>
-      <div class='staff-list'>${activeStaff.map((person, index) => `<div class='staff-card'><div class='staff-avatar staff-avatar-${index}'>${person.id === 'lou' ? 'LR' : person.id === 'marisol' ? 'MV' : 'RO'}</div><div class='staff-copy'><strong>${person.name}</strong><span>${person.role}</span><small>${money(person.wage)} / day · full shift</small></div><span class='staff-status'>ON DUTY</span></div>`).join('')}</div>
-      <div class='staff-note'><span>✳</span><div><strong>LOU — THE REGISTER</strong><p>Keeps the queue moving and knows everybody's usual. Payroll: ${money(STAFF[0].wage)} per day.</p></div></div>
-      <div class='staff-note'><span>↻</span><div><strong>MARISOL — THE FLOOR</strong><p>Runs deliveries out to the shelves and keeps the date rotation in order. Payroll: ${money(STAFF[1].wage)} per day.</p></div></div>
+      <div class='staff-list'>${activeStaff.map((person, index) => `<div class='staff-card'><div class='staff-avatar staff-avatar-${index}'>${person.id === 'lou' ? 'LR' : person.id === 'bob' ? 'BO' : person.id === 'waiter' ? 'WT' : 'RO'}</div><div class='staff-copy'><strong>${person.name}</strong><span>${person.role}</span><small>${money(person.wage)} / day · full shift</small></div><span class='staff-status'>ON DUTY</span></div>`).join('')}</div>
+      <div class='staff-note'><span>✳</span><div><strong>LOU — THE COUNTER</strong><p>Keeps the queue moving and knows everybody's usual. Payroll: ${money(STAFF[0].wage)} per day.</p></div></div>
+      <div class='staff-note'><span>☕</span><div><strong>BOB — THE KITCHEN</strong><p>Prepares breakfast ingredients and keeps the coffee station ready. Payroll: ${money(STAFF[1].wage)} per day.</p></div></div>
+      <div class='staff-note'><span>↗</span><div><strong>THE WAITER — TABLE SERVICE</strong><p>Walks meals to seated guests at the tables and booths. Payroll: ${money(STAFF[2].wage)} per day.</p></div></div>
     </div>
     <div class='panel-section'>
       <div class='section-heading'><div><div class='eyebrow'>GROW THE BUSINESS</div><h3>Unlock new staff</h3></div><span class='tag tag-muted'>LEVEL ${level.level}</span></div>
@@ -498,10 +501,10 @@ function staffPanel() {
       ${managerCard}
     </div>
     <div class='panel-section cat-section'>
-      <div class='section-heading'><div><div class='eyebrow'>UNPAID, UNBOTHERED</div><h3>The bodega cats</h3></div><span class='tag tag-good'>3 MANAGERS</span></div>
+      <div class='section-heading'><div><div class='eyebrow'>UNPAID, UNBOTHERED</div><h3>The cafe cats</h3></div><span class='tag tag-good'>3 MANAGERS</span></div>
       <div class='cat-list'>${CAT_ROSTER.map((cat) => `<div class='cat-card'><div class='cat-portrait cat-${cat.coat}'><span>✦</span></div><div><strong>${cat.name}</strong><span>${cat.coat} coat · ${cat.job}</span></div><small>PERMANENT</small></div>`).join('')}</div>
       <div class='fine-print'>They do not take a salary. They do occasionally take the warmest chair, a patch of sunlight, or an entire shelf to themselves.</div>
-      <div class='cat-odds-note'><strong>THE CUSTOMER FACTOR</strong><span>25% of shoppers are charmed · 20% get annoyed · 55% are indifferent. Cat encounters can sway mood, reputation, and reviews.</span></div>
+      <div class='cat-odds-note'><strong>THE CUSTOMER FACTOR</strong><span>25% of diners are charmed · 20% get annoyed · 55% are indifferent. Cat encounters can sway mood, reputation, and reviews.</span></div>
     </div>
     <div class='panel-section'>
       <div class='section-heading'><div><div class='eyebrow'>HOUSEKEEPING</div><h3>Store standards</h3></div></div>

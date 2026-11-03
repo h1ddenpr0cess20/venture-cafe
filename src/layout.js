@@ -43,7 +43,7 @@ const GONDOLA_2_STOCK = Object.entries({ sugar: 'shelf-2', oats: 'shelf-3', pean
  * lists, coolers as rows of products from the bottom shelf up.
  */
 export const PIECES = [
-  { id: 'pantry', type: 'gondola', name: 'Kitchen pantry', w: GONDOLA.length, d: GONDOLA.depth, always: true, fixtures: ['shelf-1'], home: { x: -6.7, z: -6.0, rot: 0 },
+  { id: 'pantry', type: 'gondola', name: 'Kitchen pantry', w: GONDOLA.length, d: GONDOLA.depth, always: true, movable: false, fixtures: ['shelf-1'], home: { x: -6.7, z: -6.0, rot: 0 },
     stock: [['rice', 1, 0], ['pasta', 1, 1], ['cereal', 1, 2], ['beans', -1, 0], ['coffee', -1, 1], ['flour', -1, 2]] },
   ...['apples', 'bananas', 'tomatoes', 'lettuce', 'potatoes'].map((product, i) => ({
     id: `produce-${i + 1}`, type: 'bin', name: 'Produce bin', w: BIN_SIZE, d: BIN_SIZE, always: false, fixtures: [], home: { x: -8.0, z: [-0.55, 0.95, 2.45, 3.95, 5.45][i], rot: 1 }, stock: [product],
@@ -100,6 +100,24 @@ export const CAFE_SEATS = [
   { id: 'booth-b-1', x: -7.05, z: 3.7, yaw: Math.PI / 2, tableId: 'booth-b', style: 'booth' },
   { id: 'booth-b-2', x: -7.05, z: 4.8, yaw: Math.PI / 2, tableId: 'booth-b', style: 'booth' },
   ...CAFE_BAR_STOOLS.map((seat) => ({ ...seat, tableId: 'bar', style: 'stool' })),
+];
+export const CAFE_SERVICE_STOPS = [
+  ...CAFE_TABLES.map((table) => ({
+    id: table.id,
+    x: table.x,
+    z: table.z + table.d / 2 + 0.85,
+    plateX: table.x,
+    plateZ: table.z,
+    plateKind: table.id === 'table-a' ? 'scramble' : table.id === 'table-b' ? 'sunny' : 'omelette',
+  })),
+  ...CAFE_BOOTHS.map((booth) => ({
+    id: booth.id,
+    x: -4.75,
+    z: booth.z,
+    plateX: -5.85,
+    plateZ: booth.z,
+    plateKind: 'omelette',
+  })),
 ];
 export const CAFE_FURNITURE = [
   ...CAFE_TABLES.map((table) => ({ x: table.x, z: table.z, w: table.w, d: table.d })),
@@ -184,8 +202,9 @@ export const DOOR_IN = [FRONT_DOOR.x, 0, 6.5];
 export const SIDEWALK_SPAWN = [FRONT_DOOR.x + 0.2, 0, 9.5];
 export const SIDEWALK_EXITS = [[-6.5, 0, 9.5], [8.2, 0, 9.5]];
 export const CHECKOUT = [3.8, 0, -4.05];
-export const LOU_HOME = [3.8, 0, -6.35];                    // barista station behind the service bar
-export const MARISOL_HOME = [-7.0, 0, -3.35];              // kitchen lead at the prep line
+export const LOU_HOME = [3.8, 0, -6.35];                    // counter host behind the service bar
+export const BOB_HOME = [-7.0, 0, -3.35];                  // Bob's kitchen/barista station
+export const WAITER_HOME = [6.4, 0, -1.8];                 // dining-room service station
 export const MANAGER_HOME = [-5.0, 0, -3.25];              // cafe manager near the kitchen pass
 export const PLAYER_HOME = [4.5, 0, 4.9];
 
@@ -479,7 +498,7 @@ function withLayout(ownedIds, layout, fn) {
 export function shopStillWorks(ownedIds, layout, extraStands = []) {
   return withLayout(ownedIds, layout, () => {
     const from = [SIDEWALK_SPAWN[0], 0, SIDEWALK_SPAWN[2]];
-    const keys = [CHECKOUT, MARISOL_HOME, MANAGER_HOME, DOOR_IN, ...extraStands];
+    const keys = [CHECKOUT, BOB_HOME, MANAGER_HOME, DOOR_IN, ...extraStands];
     // Lines on pieces that are not bought have nowhere to stand yet.
     const live = Object.entries(SLOTS).filter(([id]) => !LOCAL_SLOTS[id] || standing(PIECE_BY_ID[LOCAL_SLOTS[id][0]], new Set(ownedIds))).map(([, s]) => [s.stand[0], 0, s.stand[1]]);
     return [...keys, ...live].every((to) => !navBlocked(to[0], to[2]) && findWalkPath(from, to, { strict: true }));

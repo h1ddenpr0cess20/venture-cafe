@@ -84,8 +84,9 @@ export const FIXTURE_BY_ID = Object.fromEntries(FIXTURES.map((f) => [f.id, f]));
 for (const fixture of FIXTURES) fixture.products = PRODUCTS.filter((p) => p.fixture === fixture.id).map((p) => p.id);
 for (const fixture of FIXTURES) fixture.tier = Math.min(...fixture.products.map((id) => PRODUCT_BY_ID[id].tier));
 export const STAFF = [
-  { id: 'lou', name: 'Lou Rivera', role: 'Cashier · opens the store', character: 'gent', wage: 14, color: '#e0b982' },
-  { id: 'marisol', name: 'Marisol Vega', role: 'Floor lead · stock rotation', character: 'vendor', wage: 12, color: '#64a9a3' },
+  { id: 'lou', name: 'Lou Rivera', role: 'Counter host · guest orders', character: 'gent', wage: 14, color: '#e0b982' },
+  { id: 'bob', name: 'Bob', role: 'Barista · coffee and breakfast drinks', character: 'barista', wage: 12, color: '#64a9a3' },
+  { id: 'waiter', name: 'Waiter', role: 'Dining room · table service', character: 'waiter', wage: 15, color: '#c5a06a' },
 ];
 export const PURCHASING_MANAGER = { id: 'rafael', name: 'Rafael Ortiz', role: 'Purchasing manager · supplier orders', character: 'suit', wage: 18, hireCost: 300, unlockLevel: 5, cashReserve: 240, firstReviewDelay: 5, reviewInterval: 30, maxLinesPerReview: 3 };
 
@@ -101,114 +102,103 @@ export const CAT_ROSTER = [
  * below, then personalised with the shopper and the item they came for.
  */
 const OPENING_REVIEWS = [
-  { id: 1, name: 'A. Brooks', rating: 5, text: 'The cats run this place and somehow the produce is still perfect. Lou always remembers my coffee.', day: 0, minute: 0, source: 'Local regular' },
-  { id: 2, name: 'S. Morales', rating: 4, text: 'Good neighborhood basics, fair prices, and Marisol keeps the shelves looking sharp. Gets packed after work.', day: 0, minute: 0, source: 'Local regular' },
-  { id: 3, name: 'J. Kim', rating: 5, text: 'Fresh bread in the morning, cold drinks at night, and a very serious-looking cat by the window.', day: 0, minute: 0, source: 'Nearby resident' },
-  { id: 4, name: 'T. Rivera', rating: 4, text: 'A proper corner store. Not a supermarket, but the people are nice and I can get what I need.', day: 0, minute: 0, source: 'Nearby resident' },
+  { id: 1, name: 'A. Brooks', rating: 5, text: 'The soft eggs are lovely and Lou remembers exactly how I take my coffee.', day: 0, minute: 0, source: 'Local regular' },
+  { id: 2, name: 'S. Morales', rating: 4, text: 'A proper neighborhood breakfast cafe. Bob makes a great coffee and the booths are comfortable.', day: 0, minute: 0, source: 'Local regular' },
+  { id: 3, name: 'J. Kim', rating: 5, text: 'Good toast, strong coffee and a sunny-side-up egg cooked just right. I will be back.', day: 0, minute: 0, source: 'Nearby resident' },
+  { id: 4, name: 'T. Rivera', rating: 4, text: 'A welcoming little cafe with a real breakfast menu and friendly service.', day: 0, minute: 0, source: 'Nearby resident' },
 ];
 
 /** Prewritten, deliberately varied copy for the simulated neighborhood review feed. */
 export const REVIEW_BANK = Object.freeze({
   expired: [
-    'Found expired {{product}} right at the front of the shelf. That is not okay.',
-    'I checked the date on the {{product}} and it was already past. Glad I noticed before taking it home.',
-    'Tried to buy {{product}}, but the date had gone. Please check the stock rotation.',
-    'Not acceptable: expired {{product}} was still out for sale. I will shop somewhere else next time.',
-    'The {{product}} looked fine until I checked the label. Dates matter, especially on food.',
-    'I came in for {{product}} and left empty-handed after finding an expired batch at the front.',
-    'One look at the date on the {{product}} and I put it straight back. Someone needs to check these shelves.',
-    'I like this little shop, which makes the expired {{product}} even more disappointing.',
-    'Please do better with the {{product}}. A past-date item should never make it to checkout.',
-    'The front-facing {{product}} was out of date. I told the cashier, but it should have been caught earlier.',
+    'The {{product}} did not taste fresh. Please check the kitchen dates before serving.',
+    'I was looking forward to {{product}}, but the ingredients tasted past their best.',
+    'The {{product}} was disappointing today. Freshness matters in a breakfast cafe.',
+    'Please check ingredient rotation. My {{product}} tasted as though it had been sitting too long.',
+    'The {{product}} should have been caught before it reached the pass.',
+    'I sent the {{product}} back because it did not taste fresh.',
+    'The date on the {{product}} was a concern. The kitchen needs a tighter check.',
+    'A breakfast plate should be fresh to order. The {{product}} missed that mark.',
   ],
   stockout: [
-    'Stopped in for {{product}}, but the shelf was empty. A little frustrating on the way home.',
-    'Good people, but somehow they are always out of {{product}} when I need it.',
-    'Wanted {{product}} and left without it. I hope they get the delivery in tomorrow.',
-    'A useful little shop, although the {{product}} shelf could use more attention.',
-    'I had to make a second stop because they were out of {{product}}. Not ideal.',
-    'The basics are usually here, but today there was no {{product}} to be found.',
+    'I came in for {{product}}, but the kitchen had run out. A little frustrating.',
+    'Good service, but {{product}} was unavailable during the breakfast rush.',
+    'Wanted {{product}} and had to choose something else. Please prep a few more portions.',
+    'The {{product}} was off the menu when I arrived. I hope that is not a regular thing.',
+    'I had to change my order because the cafe was out of {{product}}.',
   ],
   partial: [
-    'Found most of what I needed, but the {{product}} shelf was bare. Still a decent stop.',
-    'A mixed visit: friendly checkout, but I could only get part of my list because {{product}} was missing.',
-    'Convenient location and nice staff. Stock levels are a bit inconsistent, especially {{product}}.',
-    'Got a few things and skipped the rest. I will give them another try when the shelves are fuller.',
-    'The store has character, but the shopping list did not quite survive the trip. No {{product}} today.',
+    'The coffee was good, but part of my order was missing, especially the {{product}}.',
+    'A mixed visit: friendly service, but I could only get part of my breakfast because {{product}} was unavailable.',
+    'I enjoyed the cafe, though the kitchen ran short on {{product}}.',
+    'Most of breakfast was lovely. It would have been better if the {{product}} had been ready.',
   ],
   pricey: [
-    'Prices on the {{product}} are higher than the supermarket down the road. I put it back and walked out.',
-    'I like the shop, but not at that price for {{product}}. A little fairness goes a long way.',
-    'Wanted {{product}}, saw the tag and left it on the shelf. Lower the price and I will be back.',
-    'Convenient, sure, but the {{product}} was way over what it should cost.',
-    'The staff are lovely. The price of the {{product}} is not.',
-    'Not paying that much for {{product}}. Ended up going elsewhere.',
+    'The {{product}} is a bit steep for the portion. I expected more for the price.',
+    'Lovely staff, but I am not sure the {{product}} is worth that price.',
+    'Wanted {{product}}, saw the price and chose something else. Revisit the menu pricing.',
+    'Convenient breakfast stop, but the {{product}} feels overpriced.',
+    'The service was warm. The price of the {{product}} was not.',
   ],
   five: [
-    'My favorite little stop on the block. Lou knows the regulars and the checkout is always easy.',
-    'Fresh produce, cold drinks, and friendly faces. Exactly what a neighborhood shop should be.',
-    'Marisol helped me find everything in about thirty seconds. Lovely service.',
-    'Stopped in for one thing and left with dinner sorted. Great little store.',
-    'The cats are excellent greeters. The prices are fair too, which is a nice bonus.',
-    'Good selection for a small shop, shelves are tidy, and the people are genuinely kind.',
-    'Fresh bread, decent coffee, and open when I need it. Five stars from me.',
-    'This place has real neighborhood energy. I would rather shop here than walk to the big store.',
-    'Quick in, quick out, no fuss. The staff make it feel like a local place.',
-    'Blaze was supervising the apples again. Produce looked great and checkout was a breeze.',
-    'The little shop that saves the evening when you forgot one ingredient. Always appreciated.',
-    'Everything I needed was in stock, the store was clean, and the line moved quickly.',
+    'My favorite breakfast stop on the block. Lou knows the regulars and the coffee is always ready.',
+    'Perfect soft eggs, golden toast and a warm welcome. Exactly what a neighborhood cafe should be.',
+    'Bob made a beautiful breakfast and checked that everything was right. Lovely service.',
+    'Stopped in for coffee and stayed for the best breakfast I have had in weeks.',
+    'The booth seats are comfortable, the coffee is strong and the eggs are excellent.',
+    'Good portions, a thoughtful menu and genuinely kind people. Five stars.',
+    'Fresh toast, hot coffee and a sunny-side-up egg cooked perfectly.',
+    'This place has real neighborhood energy. I would rather eat here than at a chain.',
+    'Quick service without feeling rushed. The crew make it feel like a local place.',
+    'The little egg mascot outside makes me smile every morning. Breakfast is excellent too.',
+    'A lovely cafe for a slow morning. The omelette was soft and the juice was fresh.',
+    'Everything came out hot and the staff were welcoming.',
   ],
   four: [
-    'A dependable neighborhood stop. A couple of prices are higher than the big supermarket, but it is convenient.',
-    'Friendly staff and a good everyday range. Could use a little more room in the aisles.',
-    'Nice produce and a surprisingly good pantry selection. Busy at lunch, so plan accordingly.',
-    'Good local shop with a bit of personality. The cats are part of the experience.',
-    'Usually has what I need. I wish the bread delivery came a little earlier.',
-    'Much better than a quick-stop chain. A few shelves were thin today, but the service was great.',
-    'Fair prices, helpful people, and a good cold case. Four stars because the queue can build up.',
-    'I like supporting the neighborhood. Keep the good staples coming and this stays my regular stop.',
-    'Marisol was lovely. The shop is small, but the selection is thoughtfully put together.',
+    'A dependable neighborhood cafe. A couple of dishes take a little longer, but the coffee is worth it.',
+    'Friendly crew and a good breakfast menu. Could use a little more room at peak time.',
+    'The eggs were excellent and the booths are comfortable. Busy around brunch, so plan accordingly.',
+    'Good local cafe with a bit of personality. The mascots are part of the charm.',
+    'Usually has what I want. I wish the toast came out with the eggs a little more often.',
+    'Much better than a quick-stop chain. A short wait today, but the service was great.',
+    'Fair prices, helpful people and a good cup of coffee. Four stars because the queue can build up.',
+    'I like supporting the neighborhood. Keep the breakfast menu this good and I will stay a regular.',
   ],
   three: [
-    'It does the job. Some days the shelves are full, other days it is a bit hit or miss.',
-    'A convenient shop, though the range is limited and prices vary quite a bit.',
-    'Nothing terrible, nothing amazing. Fine for a quick top-up.',
-    'The staff were nice. I just could not find two of the things on my list.',
-    'Good location and a lot of character. The shopping experience was pretty average today.',
-    'I want to like this place more. A little consistency with stock would make a difference.',
-    'Handy for the essentials, but I would not plan a full grocery run around it.',
+    'It does the job. Some mornings are great, other mornings are a little hit or miss.',
+    'A convenient cafe, though the menu is limited and some portions vary.',
+    'Nothing terrible, nothing amazing. Fine for a quick breakfast.',
+    'The staff were nice. My coffee arrived before the food and was cold by the time breakfast came.',
+    'Good location and a lot of character. The breakfast experience was pretty average today.',
+    'I want to like this place more. A little consistency with timing would make a difference.',
   ],
   two: [
-    'The shop was untidy and I could not get half the things I came for. Needs attention.',
-    'A frustrating stop. The queue was slow and the shelf I needed was empty.',
-    'I know it is a small store, but the selection was very thin today.',
-    'Convenient location, disappointing visit. I had to go elsewhere to finish my shopping.',
+    'The table was not cleared and the kitchen seemed overwhelmed. Needs attention.',
+    'A frustrating breakfast. The wait was long and my order arrived incomplete.',
+    'I know it is a small cafe, but the menu felt very limited today.',
+    'Convenient location, disappointing visit. I had to find breakfast somewhere else.',
     'Not the usual friendly experience. Hopefully today was just an off day.',
-    'Too many gaps on the shelves and not much help finding what was missing.',
+    'My eggs were overcooked and the coffee was lukewarm. A disappointing start to the day.',
   ],
   catLoved: [
     'Came in for {{product}} and stayed an extra minute to say hello to {{cat}}. Five stars for the welcome.',
-    '{{cat}} rolled over by the apples and made my whole afternoon. Good shop, good people, good cat.',
-    'The little greeter {{cat}} is the reason I take this route home. Also, the {{product}} was great.',
-    'A proper neighborhood place. {{cat}} let me offer a polite hello while Lou rang up my {{product}}.',
-    'My kid talks about {{cat}} all week. We came for {{product}}, but the bodega cat was the highlight.',
-    'Fresh groceries and a friendly cat encounter. {{cat}} deserves an employee-of-the-month plaque.',
-    'I am not usually a cat person, but {{cat}} was very sweet. Checkout was quick too.',
-    'The shop has character, and apparently that character has whiskers. Lovely visit for {{product}}.',
-    '{{cat}} was asleep in the sun and somehow made the whole place feel welcoming. Great little stop.',
-    'Came for one thing, left with a full bag and a new favorite cat. Thanks, {{cat}}.',
+    '{{cat}} stretched in the window seat and made my whole morning. Good coffee, good people, good cat.',
+    'The little cafe greeter {{cat}} is the reason I take this route to work. Also, the {{product}} was great.',
+    'A proper neighborhood cafe. {{cat}} let me offer a polite hello while Lou poured my coffee.',
+    'My kid talks about {{cat}} all week. We came for {{product}}, but the cafe cat was the highlight.',
+    'A friendly cat encounter and a very good breakfast. {{cat}} deserves an employee-of-the-month plaque.',
+    'I am not usually a cat person, but {{cat}} was very sweet. Service was quick too.',
+    'The cafe has character, and apparently that character has whiskers. Lovely visit for {{product}}.',
   ],
   catAnnoyed: [
-    '{{cat}} was under my feet in the aisle. Cute from a distance, but I nearly tripped carrying my groceries.',
-    'I like cats, but {{cat}} climbed right onto the bagging counter while I was paying for {{product}}.',
-    'The cat hair on my coat after visiting for {{product}} was not ideal. Please keep the counter clear.',
-    '{{cat}} startled me by darting across the aisle. I just wanted to grab {{product}} and get home.',
-    'The cats are part of the charm for some people, I guess. {{cat}} blocked the shelf I needed today.',
-    'I came in for {{product}}, not to negotiate aisle space with {{cat}}. The staff were nice about it.',
-    '{{cat}} knocked a little display over right beside me. No harm done, but it made the visit stressful.',
-    'Not a fan of animals around food. {{cat}} was on the produce display while I was shopping.',
-    'The shop is handy, but {{cat}} kept weaving around my ankles. A bit too much cat for me.',
-    'I was trying to check the date on {{product}} and the cat was rubbing against the shelf. Distracting.',
+    '{{cat}} kept weaving around my chair. Cute from a distance, but distracting while I was eating.',
+    'I like cats, but {{cat}} jumped beside the counter while I was waiting for {{product}}.',
+    'The cat hair near my table was not ideal. Please keep the dining surfaces clear.',
+    '{{cat}} startled me by darting between the tables. I just wanted to enjoy breakfast.',
+    'The cats are part of the charm for some people, I guess. {{cat}} blocked the booth I wanted today.',
+    'I came in for {{product}}, not to negotiate table space with {{cat}}. The staff were nice about it.',
+    '{{cat}} knocked a little table decoration over beside me. No harm done, but it made the visit stressful.',
+    'Not a fan of animals around food. {{cat}} was too close to the dining tables while I was eating.',
   ],
 });
 
@@ -262,12 +252,13 @@ export function standingPieces(state) {
 export function placeFixture(state, pieceId, placement) {
   const piece = PIECE_BY_ID[pieceId];
   if (!piece || !isStanding(piece, new Set(state.fixtures))) return { ok: false, reason: 'not-owned' };
+  if (piece.movable === false) return { ok: false, reason: 'fixed' };
   const p = { x: Number(placement?.x), z: Number(placement?.z), rot: Number(placement?.rot) };
   if (![p.x, p.z, p.rot].every(Number.isFinite) || !Number.isInteger(p.rot) || p.rot < 0 || p.rot > 3) return { ok: false, reason: 'invalid' };
   const reason = canPlace(pieceId, p, state.fixtures, state.layout);
   if (reason) return { ok: false, reason };
   state.layout[pieceId] = p;
-  pushEvent(state, 'note', `${piece.name} was moved.`, 'Shoppers and Marisol use its new spot straight away.');
+  pushEvent(state, 'note', `${piece.name} was moved.`, 'Diners and the cafe crew use the room as soon as it is ready.');
   return { ok: true };
 }
 
@@ -341,6 +332,15 @@ export function loadGameState(serialized) {
     state.dayStats.catAnnoyed ??= 0;
     state.reviewSequence ??= Math.max(0, ...state.reviews.map((review) => review.id || 0));
     state.staffWork ??= { stage: 'idle', productId: null, timer: 0, duration: 0, moved: 0 };
+    state.waiterWork ??= { stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 };
+    for (const customer of state.customers) {
+      customer.arrivalDuration ??= 2.4;
+      customer.arrivalTimer ??= 0;
+      if (!customer.serviceStatus) {
+        const seat = CAFE_SEATS.find((candidate) => candidate.id === customer.seatId);
+        customer.serviceStatus = customer.phase === 'browsing' && seat?.style !== 'stool' ? 'waiting' : 'served';
+      }
+    }
     state.experience ??= 0;
     state.purchasingManagerHired ??= false;
     state.automaticPurchasingEnabled ??= true;
@@ -422,6 +422,7 @@ export function createGameState(seed = 20261031) {
     supplierOrders: 0,
     staffReserveSeeded: true,
     staffWork: { stage: 'idle', productId: null, timer: 0, duration: 0, moved: 0 },
+    waiterWork: { stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 },
     lastDaySummary: null,
     fixtures: [],
     layout: {},
@@ -436,15 +437,15 @@ export function createGameState(seed = 20261031) {
     state.shelves[product.id].push(newBatch(state, product, startingQty - olderQty));
     sortOldestFirst(state.shelves[product.id]);
   }
-  // Opening reserve is already-paid inventory. Marisol has real backroom stock
+  // Opening reserve is already-paid inventory. Bob has real backroom stock
   // to work from on day one, rather than being a decorative employee.
   const openingReserve = new Set(['apples','bananas','lettuce','milk','eggs','bread','chicken','beef','rice','pasta','soda','water']);
   for (const product of PRODUCTS) {
     if (!openingReserve.has(product.id)) continue;
     state.stockroom[product.id].push(newBatch(state, product, product.caseSize));
   }
-  pushEvent(state, 'note', 'The keys are yours.', 'Lou and Marisol are ready for the morning rush.');
-  pushEvent(state, 'stock', 'Opening reserve is ready in the stockroom.', 'Marisol will automatically replenish low shelves and rotate the oldest valid lots first.');
+  pushEvent(state, 'note', 'The keys are yours.', 'Lou, Bob and the waiter are ready for breakfast service.');
+  pushEvent(state, 'stock', 'Opening pantry reserve is ready.', 'Bob will automatically replenish low shelves and rotate the oldest valid lots first.');
   pushEvent(state, 'note', 'Three new managers clocked in.', 'Blaze, Jinx, and Nyx are already on the floor.');
   return state;
 }
@@ -670,6 +671,10 @@ function spawnCustomer(state) {
     demandId: basket[0].productId,
     basket,
     seatId: seat.id,
+    arrivalDuration: 2.4,
+    arrivalTimer: 2.4,
+    serviceStatus: seat.style === 'stool' ? 'served' : 'waiting',
+    servedAt: null,
     phase: 'browsing',
     phaseTotal: browseTime,
     phaseTimer: browseTime,
@@ -807,10 +812,26 @@ function checkoutCustomer(state, customer) {
   awardStoreExperience(state, experienceEarned);
 }
 
-function pickReviewText(state, bank, product, catName = 'the bodega cat') {
+const CAFE_REVIEW_ITEM_NAMES = Object.freeze({
+  apples: 'apple side', bananas: 'banana toast', tomatoes: 'tomato omelette',
+  lettuce: 'breakfast greens', potatoes: 'potato and egg skillet',
+  milk: 'house coffee', yogurt: 'yogurt bowl', cheese: 'cheddar omelette',
+  butter: 'buttered toast', eggs: 'soft scrambled eggs', bread: 'buttered toast',
+  chicken: 'breakfast sandwich', beef: 'steak and eggs', deli: 'ham omelette',
+  rice: 'breakfast rice bowl', pasta: 'pasta special', cereal: 'granola bowl',
+  beans: 'beans on toast', coffee: 'house coffee', soda: 'cold drink',
+  water: 'sparkling water', pizza: 'breakfast flatbread', icecream: 'affogato',
+  oranges: 'fresh orange juice', carrots: 'carrot muffin', onions: 'diner omelette',
+  peppers: 'diner omelette', grapes: 'fruit cup', flour: 'pancakes',
+  sugar: 'sweetened coffee', oats: 'oatmeal', peanutbutter: 'peanut butter toast',
+  chips: 'crispy potato side', cookies: 'morning cookie', candybar: 'chocolate bar',
+  orangejuice: 'fresh orange juice', bacon: 'bacon and eggs', sourcream: 'omelette topping',
+});
+
+function pickReviewText(state, bank, product, catName = 'the cafe cat') {
   const template = bank[Math.floor(state.random() * bank.length)];
   return template
-    .replaceAll('{{product}}', product?.short?.toLowerCase() ?? 'item')
+    .replaceAll('{{product}}', CAFE_REVIEW_ITEM_NAMES[product?.id] ?? product?.short?.toLowerCase() ?? 'breakfast')
     .replaceAll('{{cat}}', catName);
 }
 
@@ -908,10 +929,14 @@ export function reviewSummary(state) {
 /** Anyone still in the store when the shutters come down finishes their shop first: their sale and their opinion count. */
 function finishCustomersAtClose(state) {
   for (const customer of state.customers) {
-    if (customer.phase === 'browsing') checkoutCustomer(state, customer);
+    if (customer.phase === 'browsing') {
+      customer.serviceStatus = 'served';
+      checkoutCustomer(state, customer);
+    }
     maybeLeaveReview(state, customer);
   }
   state.customers = [];
+  state.waiterWork = { stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 };
 }
 
 function endDay(state) {
@@ -957,6 +982,7 @@ export function startNextDay(state) {
   state.paused = false;
   state.customers = [];
   state.staffWork = { stage: 'idle', productId: null, timer: 0, duration: 0, moved: 0 };
+  state.waiterWork = { stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 };
   state.nextAutoOrderAt = DAY_OPEN + (state.purchasingManagerHired ? PURCHASING_MANAGER.firstReviewDelay : 35);
   state.nextArrival = DAY_OPEN + (12 + state.random() * 20) / trafficMultiplier(state);
   state.dayStats = { revenue: 0, unitsSold: 0, customers: 0, complaints: 0, waste: 0, purchases: 0, grossProfit: 0, stockouts: 0, catLoved: 0, catAnnoyed: 0 };
@@ -1046,8 +1072,61 @@ function advancePurchasingManager(state) {
   }
 }
 
+function advanceWaiterService(state, deltaMinutes) {
+  let remaining = deltaMinutes;
+  let transitions = 0;
+  while (remaining > 1e-8 && transitions < 8) {
+    let task = state.waiterWork;
+    if (!task || task.stage === 'idle') {
+      const next = state.customers.find((customer) =>
+        customer.phase === 'browsing' && customer.serviceStatus === 'waiting' && (customer.arrivalTimer ?? 0) <= 0);
+      if (!next) return;
+      next.serviceStatus = 'serving';
+      task = state.waiterWork = {
+        stage: 'walking-to-table',
+        customerId: next.id,
+        seatId: next.seatId,
+        timer: 2.6,
+        duration: 2.6,
+      };
+      pushEvent(state, 'staff', `The waiter is heading to ${next.name}'s table.`, 'Table service · breakfast is on the way.');
+    }
+
+    const customer = state.customers.find((entry) => entry.id === task.customerId);
+    if (!customer || customer.phase !== 'browsing') {
+      state.waiterWork = { stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 };
+      transitions += 1;
+      continue;
+    }
+
+    const step = Math.min(remaining, Math.max(0, task.timer));
+    task.timer -= step;
+    remaining -= step;
+    if (task.timer > 1e-8) return;
+    transitions += 1;
+
+    if (task.stage === 'walking-to-table') {
+      task.stage = 'presenting';
+      task.timer = task.duration = 0.5;
+    } else if (task.stage === 'presenting') {
+      customer.serviceStatus = 'served';
+      customer.servedAt = state.minute;
+      task.stage = 'returning';
+      task.timer = task.duration = 1.8;
+      pushEvent(state, 'staff', `The waiter served ${customer.name} their breakfast.`, 'Meal delivered · the diner can enjoy their visit.');
+    } else {
+      state.waiterWork = { stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 };
+    }
+  }
+}
+
 function advanceCustomerPhases(state, deltaMinutes) {
   for (const customer of state.customers) {
+    if (customer.phase === 'browsing' && (customer.arrivalTimer ?? 0) > 0) {
+      customer.arrivalTimer = Math.max(0, customer.arrivalTimer - deltaMinutes);
+      continue;
+    }
+    if (customer.phase === 'browsing' && customer.serviceStatus && customer.serviceStatus !== 'served') continue;
     customer.phaseTimer -= deltaMinutes;
     if (customer.phaseTimer > 0) continue;
     if (customer.phase === 'browsing') {
@@ -1066,69 +1145,6 @@ function advanceCustomerPhases(state, deltaMinutes) {
     }
   }
   state.customers = state.customers.filter((customer) => customer.phase !== 'gone');
-}
-
-/**
- * Marisol automatically replenishes a low or empty shelf from the stockroom.
- * She only carries in-date lots; expiry checks and date rotation remain active.
- */
-function chooseStaffRestockProduct(state) {
-  const now = productNow(state);
-  const candidates = availableProducts(state).map((product) => {
-    const validBackroom = qtyOf(state.stockroom[product.id].filter((batch) => !isExpired(batch, now)));
-    const shelf = shelfQuantity(state, product.id);
-    const target = product.section === 'produce' ? 12 : product.section === 'chilled' ? 13 : 15;
-    if (!validBackroom || shelf >= target) return null;
-    const urgency = (target - shelf) / target;
-    return { product, score: urgency * (1 + product.demand * 0.32) + (shelf === 0 ? 1.2 : 0) };
-  }).filter(Boolean);
-  candidates.sort((a, b) => b.score - a.score);
-  return candidates[0]?.product ?? null;
-}
-
-function beginStaffRestock(state) {
-  const product = chooseStaffRestockProduct(state);
-  if (!product) return false;
-  state.staffWork = { stage: 'walking-to-shelf', productId: product.id, timer: 2.6, duration: 2.6, moved: 0 };
-  pushEvent(state, 'staff', `Marisol is taking ${product.short.toLowerCase()} out to the shelf.`, 'Floor restock underway · deliveries stay in the stockroom until she works them.');
-  return true;
-}
-
-function advanceStaffWork(state, deltaMinutes) {
-  let remaining = deltaMinutes;
-  let transitions = 0;
-  while (remaining > 0 && transitions < 4) {
-    let task = state.staffWork;
-    if (!task || task.stage === 'idle') {
-      if (!beginStaffRestock(state)) return;
-      task = state.staffWork;
-    }
-    const step = Math.min(remaining, Math.max(0, task.timer));
-    task.timer -= step;
-    remaining -= step;
-    if (task.timer > 1e-8) return;
-    transitions += 1;
-    if (task.stage === 'walking-to-shelf') {
-      task.stage = 'stocking';
-      task.timer = task.duration = 1.65;
-      pushEvent(state, 'staff', `Marisol is stocking ${PRODUCT_BY_ID[task.productId].short.toLowerCase()}.`, 'She checks the dates and puts the oldest valid lot at the front.');
-    } else if (task.stage === 'stocking') {
-      const result = restockProduct(state, task.productId);
-      task.moved = result.moved;
-      task.stage = 'walking-back';
-      task.timer = task.duration = 2.1;
-      if (result.moved) {
-        pushEvent(state, 'staff', `Marisol put ${result.moved} ${PRODUCT_BY_ID[task.productId].short.toLowerCase()} on the shelf.`, 'Automatic restock completed · expiry order preserved.');
-      } else {
-        pushEvent(state, 'staff', `Marisol found no in-date ${PRODUCT_BY_ID[task.productId].short.toLowerCase()} to stock.`, 'Expired backroom lots were left out of the sale area.');
-      }
-    } else {
-      state.staffWork = { stage: 'idle', productId: null, timer: 0, duration: 0, moved: task.moved };
-      // Start at most one additional task in this clock step; normal frame
-      // increments are small, so this only matters after a suspended tab.
-      if (remaining > 0) beginStaffRestock(state);
-    }
-  }
 }
 
 /** Real frame time adjusted to the store's selected speed; zero while closed or paused. */
@@ -1150,7 +1166,7 @@ export function advanceGame(state, deltaMinutes) {
     state.minute += step;
     remaining -= step;
     advanceCustomerPhases(state, step);
-    advanceStaffWork(state, step);
+    advanceWaiterService(state, step);
     advancePurchasingManager(state);
     if (state.minute >= state.nextArrival && state.minute < LAST_CALL) {
       spawnCustomer(state);

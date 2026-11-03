@@ -23,11 +23,8 @@ function cylinder(GFX, parent, x, y, z, rt, rb, h, material, segments = 20) {
   return mesh;
 }
 function freezeRig(rig) {
-  const visit = (node) => {
-    if (typeof node.onBeforeRender === 'function') node.onBeforeRender = null;
-    for (const child of node.children ?? []) visit(child);
-  };
-  visit(rig.group);
+  // Keep Madness Engine render callbacks intact. Not advancing the hero rig's
+  // pose is enough to leave it as a static storefront statue.
   return rig.group;
 }
 

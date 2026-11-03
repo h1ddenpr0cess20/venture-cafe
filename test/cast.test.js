@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CAST, PRODUCT_PROP, DETAIL, detailOf, loadingJobs, backgroundJobs, FIRST_WAVE } from '../src/cast.js';
-import { PRODUCTS, RESIDENTS, CAT_ROSTER } from '../src/sim.js';
+import { PRODUCTS, RESIDENTS, CAT_ROSTER, STAFF } from '../src/sim.js';
 import tourist from 'madness-engine/characters/tourist';
+import barista from 'madness-engine/characters/barista';
+import waiter from 'madness-engine/characters/waiter';
 
 test('every product on the shelf is an engine prop, and every resident is a person of their own', () => {
   for (const product of PRODUCTS) {
@@ -19,7 +21,10 @@ test('every product on the shelf is an engine prop, and every resident is a pers
   }
   assert.equal(defs.size, RESIDENTS.length, 'no two residents share a model');
   for (const cat of CAT_ROSTER) assert.ok(CAST[`cat:${cat.id}`], cat.id);
-  for (const name of ['staff:lou', 'staff:marisol', 'staff:rafael', 'owner']) assert.ok(CAST[name], name);
+  for (const name of ['staff:lou', 'staff:bob', 'staff:waiter', 'staff:rafael', 'owner']) assert.ok(CAST[name], name);
+  assert.equal(CAST['staff:bob'], barista, 'Bob uses the Madness Engine male barista character');
+  assert.equal(CAST['staff:waiter'], waiter, 'table service uses the Madness Engine Waiter character');
+  assert.ok(STAFF.some((person) => person.id === 'waiter' && person.character === 'waiter'));
 });
 
 test('a resident is the same person dressed in their own skin, hair and eyes', () => {

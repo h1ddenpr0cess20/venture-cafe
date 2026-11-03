@@ -440,7 +440,7 @@ test('hiring Rafael charges the recruitment cost and adds his daily wage to payr
   assert.equal(state.cash, before - PURCHASING_MANAGER.hireCost);
   assert.equal(state.purchasingManagerHired, true);
   assert.equal(state.automaticPurchasingEnabled, true);
-  assert.equal(state.dailyCosts.payroll, 44);
+  assert.equal(state.dailyCosts.payroll, 59);
   assert.equal(hirePurchasingManager(state).reason, 'already-hired');
 });
 
@@ -514,7 +514,7 @@ test('player position, store level and manager status survive saving and migrati
   assert.equal(restored.experience, 725);
   assert.equal(restored.purchasingManagerHired, true);
   assert.equal(restored.automaticPurchasingEnabled, false);
-  assert.equal(restored.dailyCosts.payroll, 44);
+  assert.equal(restored.dailyCosts.payroll, 59);
 });
 
 test('the resident cast is a varied neighborhood with valid habits', () => {
@@ -700,19 +700,31 @@ test('shoppers only ask for lines that are on sale, and old saves gain the new l
   assert.equal(loaded.prices.chips, PRODUCT_BY_ID.chips.price);
 });
 
-test('the kitchen pantry is available and movable from the first day', async () => {
+test('the kitchen pantry is fixed back-of-house infrastructure', async () => {
   const { placeFixture, standingPieces } = await import('../src/sim.js');
-  const { SLOTS, setLayout } = await import('../src/layout.js');
   const state = createGameState(3);
-  const ids = standingPieces(state).map(({ piece }) => piece.id);
-  assert.ok(ids.includes('pantry'), 'the kitchen pantry can be moved');
-  assert.ok(!ids.includes('produce-1') && !ids.includes('bakery') && !ids.includes('cooler-dairy') && !ids.includes('cooler-frozen'), 'retail display fixtures are not part of the cafe floor');
-  assert.ok(!ids.includes('bin-1') && !ids.includes('gondola-2'), 'what is not bought yet is not on the floor');
-  const before = { ...SLOTS.rice };
-  assert.ok(placeFixture(state, 'pantry', { x: 1.0, z: 0.5, rot: 0 }).ok);
-  setLayout(state.fixtures, state.layout);
-  try {
-    assert.ok(Math.abs(SLOTS.rice.x - 1.0) < 1e-9 && SLOTS.rice.z !== before.z, 'pantry stock moves with the fixture');
-    assert.equal(placeFixture(state, 'bin-1', { x: 0, z: 0, rot: 0 }).reason, 'not-owned');
-  } finally { setLayout([], {}); }
+  const pantry = standingPieces(state).find(({ piece }) => piece.id === 'pantry');
+  assert.ok(pantry, 'the kitchen pantry exists from day one');
+  assert.equal(pantry.piece.movable, false);
+  assert.deepEqual({ x: pantry.x, z: pantry.z }, { x: -6.7, z: -6.0 });
+  assert.equal(placeFixture(state, 'pantry', { x: 1.0, z: 0.5, rot: 0 }).reason, 'fixed');
+  assert.equal(placeFixture(state, 'bin-1', { x: 0, z: 0, rot: 0 }).reason, 'not-owned');
+});
+
+test('table diners wait for the waiter to serve breakfast before their visit timer runs', () => {
+  const state = prepareState();
+  state.nextArrival = 100000;
+  const customer = {
+    id: 9001, name: 'Ari', basket: [{ productId: 'eggs', qty: 1 }],
+    seatId: 'table-a-west', arrivalDuration: 2.4, arrivalTimer: 0, serviceStatus: 'waiting', phase: 'browsing',
+    phaseTotal: 12, phaseTimer: 12, result: null, bought: 0, spend: 0, thrift: 1,
+  };
+  state.customers.push(customer);
+  advanceGame(state, 1);
+  assert.equal(customer.phase, 'browsing');
+  assert.equal(customer.serviceStatus, 'serving');
+  advanceGame(state, 3.5);
+  assert.equal(customer.serviceStatus, 'served');
+  assert.equal(customer.phase, 'browsing');
+  assert.ok(state.events.some((event) => /waiter served Ari/i.test(event.message)));
 });

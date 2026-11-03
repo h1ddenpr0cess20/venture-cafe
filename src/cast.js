@@ -1,5 +1,5 @@
 /**
- * Every model the shop uses, by name: the staff, the owner, the cats, the
+ * Every model Venture Cafe uses, by name: the staff, the owner, the cats, the
  * residents (each their own person from the engine's cast, in their own skin,
  * hair and eyes) and the stock. The page and the bake worker both import this,
  * so a name means the same definition in both and a mesh baked in a worker can be
@@ -9,7 +9,6 @@ import { cloth, person } from 'madness-engine/characters/person';
 import { CAT_DEFS } from 'madness-engine/characters/cat';
 import { GROCERIES } from 'madness-engine/props/groceries';
 import gent from 'madness-engine/characters/gent';
-import vendor from 'madness-engine/characters/vendor';
 import purchasingSuit from 'madness-engine/characters/suit';
 import tourist from 'madness-engine/characters/tourist';
 import punk from 'madness-engine/characters/punk';
@@ -28,6 +27,7 @@ import mailcarrier from 'madness-engine/characters/mailcarrier';
 import crossingguard from 'madness-engine/characters/crossingguard';
 import engineer from 'madness-engine/characters/engineer';
 import barista from 'madness-engine/characters/barista';
+import waiter from 'madness-engine/characters/waiter';
 import influencer from 'madness-engine/characters/influencer';
 import foreman from 'madness-engine/characters/foreman';
 import { RESIDENTS, CAT_ROSTER } from './sim.js';
@@ -36,7 +36,7 @@ const BASES = { tourist, punk, hippie, artist, hipster, cabbie, nonna, beerguy, 
 
 /** The store owner, whom the player walks about as: a regular person in a green work shirt, not a boss. */
 export const OWNER_CHARACTER = person({
-  name: 'bodega-owner',
+  name: 'venture-cafe-manager',
   scale: 1.44,
   b: 0.98,
   shape: { legs: 1.02, torso: 1.0, head: 1.0, girth: 0.98 },
@@ -69,7 +69,8 @@ export const PRODUCT_PROP = {
 
 export const CAST = {
   'staff:lou': gent,
-  'staff:marisol': vendor,
+  'staff:bob': barista,
+  'staff:waiter': waiter,
   'staff:rafael': purchasingSuit,
   owner: OWNER_CHARACTER,
   'prop:carton': GROCERIES.carton,

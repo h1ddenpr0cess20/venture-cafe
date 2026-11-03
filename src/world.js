@@ -11,14 +11,15 @@ import { screenMovementToWorld, startsCameraDrag, holdsCameraDrag, endsCameraDra
 import { PRODUCTS, CAT_ROSTER, STAFF, PRODUCT_BY_ID, RESIDENTS, RESIDENT_BY_ID, isAvailable, shelfQuantity, stockroomQuantity, activeFrameDelta } from './sim.js';
 import {
   SHELL, FRONT_DOOR, REAR_DOOR, BACKROOM, SIDEWALK, LEVELS, GONDOLA, COOLER_LEVELS, COOLER_HEIGHT, BAKERY_TOP, COUNTER,
-  BACKBAR, BACKROOM_FIXTURES, SLOTS, DOOR_IN, SIDEWALK_SPAWN, SIDEWALK_EXITS, CHECKOUT, LOU_HOME, MARISOL_HOME, MANAGER_HOME, PLAYER_HOME,
+  BACKBAR, BACKROOM_FIXTURES, SLOTS, DOOR_IN, SIDEWALK_SPAWN, SIDEWALK_EXITS, CHECKOUT, LOU_HOME, BOB_HOME, WAITER_HOME, MANAGER_HOME, PLAYER_HOME,
   GONDOLA_2_BOARDS, BIN_SIZE, PIECES, PIECE_BY_ID, pieceOfProduct, isStanding, placementOf, setLayout, footprint, snapPlacement, placementProblem,
-  CAT_PATROLS, navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS,
+  CAT_PATROLS, navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS, CAFE_SERVICE_STOPS,
 } from './layout.js';
 import { wallOpacity, easeOpacity, WALL_MODES } from './walls.js';
 import { CAST, DETAIL, loadingJobs, backgroundJobs, FIRST_WAVE } from './cast.js';
 import { STREETSCAPE, STREET_MODELS } from './streetscape.js';
 import { buildCafeFurniture, buildCafeKitchen, buildCafeMascots } from './cafe.js';
+import { createBreakfastPlate } from './cafe-food.js';
 
 const PLAYER_SPEED = 2.25;
 const HUMAN_HEIGHT = 1.42;
@@ -538,13 +539,21 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   const louFloor = normalizeActorHeight(lou, HUMAN_HEIGHT);
   const louHome = [LOU_HOME[0], louFloor, LOU_HOME[2]];
   lou.group.position.set(...louHome); lou.group.rotation.y = -Math.PI / 2; scene.add(lou.group);
-  const marisol = createModel(GFX, CAST['staff:marisol'], { detail: DETAIL.staff });
-  const marisolFloor = normalizeActorHeight(marisol, HUMAN_HEIGHT);
-  const marisolHome = [MARISOL_HOME[0], marisolFloor, MARISOL_HOME[2]];
-  marisol.group.position.set(...marisolHome); marisol.group.rotation.y = Math.PI / 2; scene.add(marisol.group);
+
+  const bob = createModel(GFX, CAST['staff:bob'], { detail: DETAIL.staff });
+  const bobFloor = normalizeActorHeight(bob, HUMAN_HEIGHT);
+  const bobHome = [BOB_HOME[0], bobFloor, BOB_HOME[2]];
+  bob.group.position.set(...bobHome); bob.group.rotation.y = Math.PI / 2; scene.add(bob.group);
+
+  const waiter = createModel(GFX, CAST['staff:waiter'], { detail: DETAIL.staff });
+  const waiterFloor = normalizeActorHeight(waiter, HUMAN_HEIGHT);
+  const waiterHome = [WAITER_HOME[0], waiterFloor, WAITER_HOME[2]];
+  waiter.group.position.set(...waiterHome); waiter.group.rotation.y = Math.PI; scene.add(waiter.group);
+
   const staffModels = [
-    { model: lou, name: STAFF[0].name, time: 0, home: louHome, poseAccumulator: 0 },
-    { model: marisol, name: STAFF[1].name, time: 1.5, home: marisolHome, poseAccumulator: 0, route: [marisolHome], routeStage: 'idle' },
+    { model: lou, name: STAFF[0].name, time: 0, home: louHome, floor: louFloor, poseAccumulator: 0 },
+    { model: bob, name: STAFF[1].name, time: 1.5, home: bobHome, floor: bobFloor, poseAccumulator: 0 },
+    { model: waiter, name: STAFF[2].name, time: 2.5, home: waiterHome, floor: waiterFloor, poseAccumulator: 0, route: [waiterHome], routeStage: 'idle', routeCustomer: null },
   ];
 
   const playerModel = createModel(GFX, CAST.owner, { detail: DETAIL.owner });
@@ -629,6 +638,14 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   // ——— customers: residents walk in off the sidewalk, shop, queue at the counter and leave ———
   const customerActors = new Map();
   const readyResidents = new Set(FIRST_WAVE);
+  const servicePlates = new Map(CAFE_SERVICE_STOPS.map((stop) => {
+    const plate = createBreakfastPlate(GFX, stop.plateKind);
+    plate.position.set(stop.plateX, 1.03, stop.plateZ);
+    plate.scale.setScalar(0.43);
+    plate.visible = false;
+    scene.add(plate);
+    return [stop.id, plate];
+  }));
   const stand = (productId) => { const [x, z] = SLOTS[productId].stand; return [x, 0, z]; };
 
   function setCustomerRoute(actor, customer) {
@@ -694,7 +711,9 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
       if (actor.phase !== customer.phase) setCustomerRoute(actor, customer);
       const elapsed = Math.max(0, customer.phaseTotal - customer.phaseTimer);
       const moveDuration = Math.max(0.01, customer.phaseTotal * actor.routeFraction);
-      const progress = Math.min(1, elapsed / moveDuration);
+      const progress = customer.phase === 'browsing'
+        ? Math.min(1, Math.max(0, 1 - (customer.arrivalTimer ?? 0) / Math.max(0.01, customer.arrivalDuration ?? 2.4)))
+        : Math.min(1, elapsed / moveDuration);
       const point = pointOnRoute(actor.route, progress);
       const ahead = pointOnRoute(actor.route, Math.min(1, progress + 0.025));
       // There is no verified sit clip in this cast. Lower the idle actor into the seat
@@ -716,42 +735,68 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
         actor.poseAccumulator %= 0.05;
       }
     }
+    for (const stop of CAFE_SERVICE_STOPS) {
+      const occupiedAndServed = state.customers.some((customer) => {
+        const seat = CAFE_SEATS.find((candidate) => candidate.id === customer.seatId);
+        return seat?.tableId === stop.id && customer.phase === 'browsing' && customer.serviceStatus === 'served';
+      });
+      const plate = servicePlates.get(stop.id);
+      if (plate) plate.visible = occupiedAndServed;
+    }
   }
 
   function updateStaff(state, dt) {
-    const floorLead = staffModels[1];
-    const task = state.staffWork ?? { stage: 'idle' };
-    const stageName = task.stage ?? 'idle';
-    const slot = SLOTS[task.productId];
-    const target = slot ? stand(task.productId) : floorLead.home;
-    if (floorLead.routeStage !== stageName || floorLead.routeProduct !== task.productId) {
-      const current = [floorLead.model.group.position.x, 0, floorLead.model.group.position.z];
-      const destination = stageName === 'walking-to-shelf' || stageName === 'stocking' ? target : floorLead.home;
-      floorLead.route = planWalkRoute(current, [destination]);
-      floorLead.routeStage = stageName;
-      floorLead.routeProduct = task.productId;
-    }
-    if (stageName === 'walking-to-shelf' || stageName === 'walking-back') {
-      const progress = Math.min(1, Math.max(0, 1 - task.timer / Math.max(0.01, task.duration)));
-      const point = pointOnRoute(floorLead.route, progress);
-      const ahead = pointOnRoute(floorLead.route, Math.min(1, progress + 0.035));
-      floorLead.model.group.position.set(point[0], floorLead.home[1], point[2]);
-      if (progress < 1) faceAlong(floorLead.model.group, point, ahead);
-    } else if (stageName === 'stocking') {
-      const end = floorLead.route[floorLead.route.length - 1];
-      floorLead.model.group.position.set(end[0], floorLead.home[1], end[2]);
-      if (slot) floorLead.model.group.rotation.y = slot.yaw + Math.PI;                                // face the shelf
-    } else {
-      floorLead.model.group.position.set(...floorLead.home);
-    }
-    for (const worker of staffModels) {
+    for (const worker of staffModels.slice(0, 2)) {
       worker.time += dt;
-      worker.poseAccumulator = (worker.poseAccumulator ?? 0) + dt;
+      worker.poseAccumulator += dt;
       if (worker.poseAccumulator >= 0.05) {
-        const moving = worker === floorLead && (stageName === 'walking-to-shelf' || stageName === 'walking-back');
-        worker.model.pose({ clip: moving ? 'walk' : 'idle', t: worker.time, time: worker.time, seed: worker.name.length });
+        worker.model.pose({ clip: 'idle', t: worker.time, time: worker.time, seed: worker.name.length });
         worker.poseAccumulator %= 0.05;
       }
+      worker.model.group.position.set(...worker.home);
+    }
+  }
+
+  function updateWaiter(state, dt) {
+    const actor = staffModels[2];
+    const task = state.waiterWork ?? { stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 };
+    const stageName = task.stage ?? 'idle';
+    const customer = state.customers.find((candidate) => candidate.id === task.customerId);
+    const seat = CAFE_SEATS.find((candidate) => candidate.id === task.seatId);
+    const stop = CAFE_SERVICE_STOPS.find((candidate) => candidate.id === seat?.tableId);
+    const here = [actor.model.group.position.x, 0, actor.model.group.position.z];
+
+    if (actor.routeStage !== stageName || actor.routeCustomer !== task.customerId) {
+      const destination = (stageName === 'walking-to-table' || stageName === 'presenting') && stop
+        ? [stop.x, 0, stop.z]
+        : [WAITER_HOME[0], 0, WAITER_HOME[2]];
+      actor.route = planWalkRoute(here, [destination]);
+      actor.routeStage = stageName;
+      actor.routeCustomer = task.customerId;
+    }
+
+    let moving = false;
+    if (stageName === 'walking-to-table' || stageName === 'returning') {
+      const progress = Math.min(1, Math.max(0, 1 - task.timer / Math.max(0.01, task.duration)));
+      const point = pointOnRoute(actor.route, progress);
+      const ahead = pointOnRoute(actor.route, Math.min(1, progress + 0.035));
+      actor.model.group.position.set(point[0], actor.floor, point[2]);
+      if (progress < 1) faceAlong(actor.model.group, point, ahead);
+      moving = progress < 1;
+    } else if (stageName === 'presenting' && stop) {
+      const point = actor.route[actor.route.length - 1];
+      actor.model.group.position.set(point[0], actor.floor, point[2]);
+      const customerSeat = seat ? [seat.x, 0, seat.z] : [point[0], 0, point[2]];
+      faceAlong(actor.model.group, point, customerSeat);
+    } else {
+      actor.model.group.position.set(...actor.home);
+    }
+
+    actor.time += dt;
+    actor.poseAccumulator += dt;
+    if (actor.poseAccumulator >= 0.05) {
+      actor.model.pose({ clip: moving ? 'walk' : 'idle', t: actor.time, time: actor.time, seed: actor.name.length });
+      actor.poseAccumulator %= 0.05;
     }
   }
 
@@ -902,11 +947,13 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     if (!state) return;
     state.availableResidents = readyResidents;
     syncDisplays(state);
-    syncCustomers(state, dt);
-    updateStaff(state, dt);
-    updateCats(activeFrameDelta(state, dt));
+    const actorDt = activeFrameDelta(state, dt);
+    syncCustomers(state, actorDt);
+    updateStaff(state, actorDt);
+    updateWaiter(state, actorDt * 1.65);
+    updateCats(actorDt);
     updatePlayer(state, dt);
-    updatePurchasingManager(state, dt);
+    updatePurchasingManager(state, actorDt);
     updateDoor(dt);
     updateWalls(dt);
     stage.target.set(world.focus?.[0] ?? 0, 0.5, world.focus?.[1] ?? 0.8);
