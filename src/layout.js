@@ -43,7 +43,7 @@ const GONDOLA_2_STOCK = Object.entries({ sugar: 'shelf-2', oats: 'shelf-3', pean
  * lists, coolers as rows of products from the bottom shelf up.
  */
 export const PIECES = [
-  { id: 'pantry', type: 'gondola', name: 'Pantry gondola', w: GONDOLA.length, d: GONDOLA.depth, always: false, fixtures: ['shelf-1'], home: { x: -1.6, z: -2.4, rot: 0 },
+  { id: 'pantry', type: 'gondola', name: 'Kitchen pantry', w: GONDOLA.length, d: GONDOLA.depth, always: true, fixtures: ['shelf-1'], home: { x: -6.7, z: -6.0, rot: 0 },
     stock: [['rice', 1, 0], ['pasta', 1, 1], ['cereal', 1, 2], ['beans', -1, 0], ['coffee', -1, 1], ['flour', -1, 2]] },
   ...['apples', 'bananas', 'tomatoes', 'lettuce', 'potatoes'].map((product, i) => ({
     id: `produce-${i + 1}`, type: 'bin', name: 'Produce bin', w: BIN_SIZE, d: BIN_SIZE, always: false, fixtures: [], home: { x: -8.0, z: [-0.55, 0.95, 2.45, 3.95, 5.45][i], rot: 1 }, stock: [product],
