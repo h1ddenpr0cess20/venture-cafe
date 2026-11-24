@@ -830,7 +830,7 @@ const CAFE_QUALITY_REVIEW_BANK = Object.freeze({
   ],
 });
 
-function leaveCafeQualityReview(state, customer) {
+function leaveCafeQualitireview(state, customer) {
   const foodQuality = Math.max(0, Math.min(100, Number(customer.foodQuality) || 0));
   const serviceQuality = Math.max(0, Math.min(100, Number(customer.serviceQuality) || 0));
   const overall = foodQuality * 0.55 + serviceQuality * 0.45;
@@ -873,7 +873,7 @@ function leaveCafeQualityReview(state, customer) {
  */
 export function maybeLeaveReview(state, customer) {
   if (customer.reviewLeft) return null;
-  if (Number.isFinite(customer.foodQuality) && Number.isFinite(customer.serviceQuality)) return leaveCafeQualityReview(state, customer);
+  if (Number.isFinite(customer.foodQuality) && Number.isFinite(customer.serviceQuality)) return leaveCafeQualitireview(state, customer);
   const outcome = customer.result ?? 'sold';
   const chance = outcome === 'expired' ? 0.9
     : outcome === 'stockout' || outcome === 'priced-out' ? 0.34

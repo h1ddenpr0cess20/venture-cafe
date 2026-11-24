@@ -34,7 +34,7 @@ test('dining chairs face their matching tables and booths provide correctly plac
  }
  const booths = CAFE_SEATS.filter(seat => seat.style === 'booth');
  assert.equal(booths.length, 4);
- assert.ok(booths.every(seat => Math.abs(seat.x - (-7.55)) < 1e-6), 'guests sit in the centre of the bench cushion, clear of the back');
+ assert.ok(booths.every(seat => Math.abs(seat.x - (-7.55)) < 1e-6), 'guests sit in the center of the bench cushion, clear of the back');
 });
 
 
