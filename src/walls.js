@@ -1,15 +1,15 @@
 /**
- * Walls that get out of the way. Every wall of the shop has an outward normal;
+ * Walls that get out of the way. Every wall of the cafe has an outward normal;
  * when the camera is out beyond a wall, looking in over it, that wall would hide
- * the shop, so it fades to a ghost. Walls the camera is behind or beside stay solid.
- * Partitions inside the shop (the backroom's) hide the view from either side, so
+ * the cafe, so it fades to a ghost. Walls the camera is behind or beside stay solid.
+ * Partitions inside the cafe (the kitchen's) hide the view from either side, so
  * they fade whichever way the camera is on.
  */
 
 /** How see-through a faded wall gets: a faint ghost, not gone, so the building still reads. */
 export const GHOST_OPACITY = 0.07;
 
-/** The cosines (of the angle between the camera's direction from the shop and a wall's normal) where fading starts and is complete. */
+/** The cosines (of the angle between the camera's direction from the cafe and a wall's normal) where fading starts and is complete. */
 export const FADE_START = 0.12;
 export const FADE_FULL = 0.5;
 
@@ -19,7 +19,7 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v));
 
 /**
  * The opacity a wall should have: 1 solid down to GHOST_OPACITY.
- * `camera` and `center` are [x, z] (the camera, and the middle of the shop it looks at);
+ * `camera` and `center` are [x, z] (the camera, and the middle of the cafe it looks at);
  * `normal` is the wall's outward [x, z]; `both` is for a wall with two faces to hide behind.
  */
 export function wallOpacity({ camera, center, normal, both = false, mode = 'auto' }) {

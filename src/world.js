@@ -1,8 +1,6 @@
 import * as GFX from 'madness-engine/gfx';
 import { createStage } from 'madness-engine/stage';
 import { createView } from 'madness-engine/view';
-import { createModel } from 'madness-engine/models/model';
-import { createBakeLibrary } from 'madness-engine/models/bake';
 import { bake as legacyBake } from 'madness-engine/models/legacy-bake';
 import { floorTexture, wallTexture } from 'madness-engine/textures/venue';
 import { paintRoom } from 'madness-engine/textures/rooms/town';
@@ -10,32 +8,19 @@ import { paintSky } from 'madness-engine/textures/skies/haze';
 import { screenMovementToWorld, startsCameraDrag, holdsCameraDrag, endsCameraDrag } from './controls.js';
 import { STAFF, RESIDENTS, RESIDENT_BY_ID, activeFrameDelta } from './sim.js';
 import {
-  SHELL, FRONT_DOOR, REAR_DOOR, BACKROOM, SIDEWALK, LEVELS, GONDOLA, COOLER_LEVELS, COOLER_HEIGHT, BAKERY_TOP, COUNTER,
-  BACKBAR, SLOTS, DOOR_IN, SIDEWALK_SPAWN, SIDEWALK_EXITS, CHECKOUT, LOU_HOME, BOB_HOME, WAITER_HOME, KITCHEN_PASS, PLAYER_HOME,
-  GONDOLA_2_BOARDS, BIN_SIZE, PIECES, PIECE_BY_ID, pieceOfProduct, isStanding, placementOf, setLayout, footprint, snapPlacement, placementProblem,
-  navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS, CAFE_SERVICE_STOPS, CAFE_PLACE_SETTINGS, TABLE_TOP, SIT_LIFT,
+  SHELL, FRONT_DOOR, REAR_DOOR, KITCHEN, SIDEWALK, COUNTER, BACKBAR,
+  DOOR_IN, SIDEWALK_SPAWN, SIDEWALK_EXITS, CHECKOUT, LOU_HOME, BOB_HOME, WAITER_HOME, KITCHEN_PASS, PLAYER_HOME,
+  navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS, CAFE_SERVICE_STOPS, CAFE_PLACE_SETTINGS, TABLE_TOP,
 } from './layout.js';
 import { wallOpacity, easeOpacity, WALL_MODES } from './walls.js';
-import { CAST, DETAIL, loadingJobs, backgroundJobs, FIRST_WAVE } from './cast.js';
+import { buildPerson, FIRST_WAVE } from './people.js';
 import { STREETSCAPE, STREET_MODELS } from './streetscape.js';
-import { buildCafeFurniture, buildCafeKitchen } from './cafe.js';
+import { buildCafeFurniture, buildCafeKitchen, buildCafeBar, buildCafeBackbar } from './cafe.js';
 import { createBreakfastPlate } from './cafe-food.js';
 
 const PLAYER_SPEED = 2.25;
-const HUMAN_HEIGHT = 1.42;
 const BRICK_TILE = 2.25;                       // world units a brick texture tile covers
 const STORE_CENTER = [0, 0];
-
-function normalizeActorHeight(model, targetHeight) {
-  const geometry = model.mesh.geometry;
-  geometry.computeBoundingBox();
-  const bounds = geometry.boundingBox;
-  const meshScaleY = model.mesh.scale.y || 1;
-  const currentHeight = Math.max(0.001, (bounds.max.y - bounds.min.y) * meshScaleY);
-  const fit = targetHeight / currentHeight;
-  model.group.scale.setScalar(fit);
-  return -bounds.min.y * meshScaleY * fit;
-}
 
 function faceAlong(group, from, to) {
   const dx = to[0] - from[0], dz = to[2] - from[2];
@@ -62,19 +47,8 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   const report = onProgress;
   let shown = 0;
   onProgress = (label, percent) => report(label, (shown = Math.max(shown, percent)));   // the bar only ever moves forward
-  onProgress('Opening the shop floor', 3);
+  onProgress('Opening the cafe', 3);
   const params = new URLSearchParams(window.location.search);
-
-  // ——— models are sculpted in workers while the scene is built ———
-  const spawn = () => new Worker(new URL('./bake.worker.js', import.meta.url), { type: 'module' });
-  const library = createBakeLibrary({ sculpted: CAST, spawn, jobs: loadingJobs, label: 'venture-cafe' });
-  const jobs = loadingJobs();
-  let bakedCount = 0;
-  const waits = jobs.map(([name, detail]) => library.ready(name, detail).then(() => {
-    bakedCount += 1;
-    onProgress(`Sculpting the neighborhood · ${bakedCount} of ${jobs.length}`, 8 + (bakedCount / jobs.length) * 60);
-  }));
-  library.preload(jobs);
 
   const view = createView({ yaw: Number(params.get('yaw') ?? -0.55), pitch: Number(params.get('pitch') ?? 0.72), zoom: 1.0 });
   const stage = await createStage(host, {
@@ -169,7 +143,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   /**
    * A wall that can fade: a group with materials of its own, so one wall can go to a
    * ghost while the next stays solid. `normal` is its outward direction; `both` is a
-   * partition, which hides the shop from either side.
+   * partition, which hides the kitchen from either side.
    */
   const wallGroups = [];
   function wall(name, { normal, both = false }) {
@@ -238,8 +212,8 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   const floorBump = new GFX.CanvasTexture(floorTex.bump.image);
   floorBump.wrapS = floorBump.wrapT = GFX.RepeatWrapping; floorBump.repeat.set(9, 7);
   box(scene, 0, -0.15, 0, 18.2, 0.3, 14.2, new GFX.MeshStandardMaterial({ color: '#b8b0a0', map: floorMap, bumpMap: floorBump, bumpScale: 0.08, roughness: 0.82 }), { castShadow: false });
-  const br = BACKROOM;
-  box(scene, (br.minX + br.maxX) / 2, 0.006, (br.minZ + br.maxZ) / 2, br.maxX - br.minX, 0.014, br.maxZ - br.minZ, mats.concrete, { castShadow: false });   // the backroom's concrete
+  const br = KITCHEN;
+  box(scene, (br.minX + br.maxX) / 2, 0.006, (br.minZ + br.maxZ) / 2, br.maxX - br.minX, 0.014, br.maxZ - br.minZ, mats.concrete, { castShadow: false });   // the kitchen's concrete
   box(scene, FRONT_DOOR.x, 0.01, 6.2, 1.6, 0.02, 0.9, mats.rubber, { castShadow: false });                                                                 // the doormat
   box(scene, REAR_DOOR.x, 0.01, -6.3, 1.4, 0.02, 0.8, mats.rubber, { castShadow: false });
 
@@ -328,12 +302,12 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   }
   right.plane('NEXT PLEASE', W - 0.2, 3.3, COUNTER.z, 2.6, 0.5, { background: '#354b47', foreground: '#f0e7cf', accent: '#d9a55f', fontSize: 52, width: 768, height: 104 }, -Math.PI / 2);
 
-  // The backroom's own walls, shorter than the shell: they hide the room from either side, so they fade from both.
+  // The kitchen's own walls, shorter than the shell: they hide the room from either side, so they fade from both.
   const partitionH = 3.0;
-  const partNS = wall('backroom-east', { normal: [1, 0], both: true });
+  const partNS = wall('kitchen-east', { normal: [1, 0], both: true });
   partNS.brick(br.maxX, partitionH / 2, (br.minZ + br.maxZ - T / 2) / 2, T, partitionH, br.maxZ - T / 2 - br.minZ, '#b9b2a2');   // from the back wall to the south partition's face
-  partNS.plane('STOCKROOM', br.maxX + 0.17, 2.3, -4.3, 1.8, 0.36, { background: '#3d5148', foreground: '#f4e9d1', accent: '#d6b578', fontSize: 40, width: 576, height: 92 }, Math.PI / 2);
-  const partEW = wall('backroom-south', { normal: [0, 1], both: true });
+  partNS.plane('KITCHEN', br.maxX + 0.17, 2.3, -4.3, 1.8, 0.36, { background: '#3d5148', foreground: '#f4e9d1', accent: '#d6b578', fontSize: 40, width: 576, height: 92 }, Math.PI / 2);
+  const partEW = wall('kitchen-south', { normal: [0, 1], both: true });
   const gapL = br.doorX - br.doorWidth / 2, gapR = br.doorX + br.doorWidth / 2;
   partEW.brick((br.minX - T + gapL) / 2, partitionH / 2, br.maxZ, gapL - br.minX + T, partitionH, T, '#b9b2a2');
   partEW.brick((gapR + br.maxX + T / 2) / 2, partitionH / 2, br.maxZ, br.maxX + T / 2 - gapR, partitionH, T, '#b9b2a2');
@@ -371,140 +345,44 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   }
 
   // ——— cafe fixtures ———
-  onProgress('Setting up cafe furniture and prep stations', 70);
-  // Everything that stands on the floor and can be moved (layout.js PIECES): each is built in its own frame, facing +z, and
-  // stood where the layout says. The ones that are bought stay unseen until they are.
-  const pieceViews = new Map();
-  const pieceOfGroup = new Map();
-  const fixtureViews = new Map();
-  const forFixture = (id, object) => { object.visible = false; if (!fixtureViews.has(id)) fixtureViews.set(id, []); fixtureViews.get(id).push(object); return object; };
-  const signStyle = { background: '#33464c', foreground: '#f4e9d1', accent: '#d16f53', fontSize: 34, width: 768, height: 96 };
-  const coolerStyle = { background: '#38545a', foreground: '#eef3e5', accent: '#b3d9d2', fontSize: 38, width: 768, height: 80 };
-  function buildGondola(group, piece) {
-    const { w: length, d: depth } = piece, height = GONDOLA.height;
-    box(group, 0, 0.16, 0, length + 0.06, 0.22, depth + 0.1, mats.dark);
-    for (const sx of [-1, 1]) box(group, sx * (length / 2 - 0.05), height / 2, 0, 0.1, height, depth, mats.metal);
-    box(group, 0, height / 2, 0, length - 0.2, height - 0.1, 0.08, mats.steelDark);
-    box(group, 0, height + 0.04, 0, length + 0.1, 0.1, depth + 0.1, mats.dark);
-    const faces = piece.id === 'pantry' ? ['PANTRY · RICE · PASTA · CEREAL', 'BEANS · COFFEE · FLOUR'] : ['SNACKS · BAKING · SPREADS', 'CHIPS · COOKIES · CANDY'];
-    for (const s of [-1, 1]) signPlane(group, s > 0 ? faces[0] : faces[1], 0, height + 0.38, s * 0.56, Math.min(3.4, length - 0.5), 0.46, signStyle, { rotationY: s > 0 ? 0 : Math.PI, singleSided: true });
-    // The boards: all of them on the pantry gondola, each of the second one's when it is bought.
-    for (const [level, y] of LEVELS.entries()) for (const face of [1, -1]) {
-      const fixture = Object.entries(GONDOLA_2_BOARDS).find(([, [f, l]]) => f === face && l === level)?.[0];
-      const board = piece.id === 'pantry' ? group : forFixture(fixture, new GFX.Group());
-      if (board !== group) group.add(board);
-      box(board, 0, y - 0.03, face * 0.28, length - 0.12, 0.05, 0.52, mats.woodLight);
-    }
-  }
-  function buildBin(group) {
-    box(group, 0, 0.18, 0, BIN_SIZE, 0.36, BIN_SIZE, mats.wood);
-    box(group, 0, 0.42, 0.62, 1.34, 0.3, 0.08, mats.woodLight);                    // the low lip on the aisle side
-    box(group, 0, 0.55, -0.61, 1.34, 0.9, 0.1, mats.woodLight);                    // the tall back
-    box(group, 0, 0.4, -0.04, 1.14, 0.04, 1.12, mats.woodDark);
-    // A sign on the tall back, so it goes where the bin goes.
-    signPlane(group, 'FRESH PRODUCE', 0, 0.86, -0.555, 1.0, 0.2, { background: '#35533c', foreground: '#f6edcf', accent: '#c8d19a', fontSize: 44, width: 768, height: 104 }, { singleSided: true });
-  }
-  function buildTable(group, piece) {
-    box(group, 0, BAKERY_TOP / 2, 0, piece.w, BAKERY_TOP - 0.1, piece.d, mats.wood);
-    box(group, 0, BAKERY_TOP - 0.05, 0, piece.w + 0.1, 0.1, piece.d + 0.1, mats.woodLight);
-    signPlane(group, 'BAKERY', 0, BAKERY_TOP + 0.42, -0.3, 1.3, 0.36, { background: '#875a38', foreground: '#fff0d2', accent: '#e1b276', fontSize: 52, width: 512, height: 96 });
-    box(group, 0, BAKERY_TOP + 0.18, -0.3, 0.05, 0.4, 0.05, mats.dark);
-  }
-  function buildCooler(group, piece) {
-    const { w: cw, d: cd } = piece, ch = COOLER_HEIGHT;
-    // The compressor plinth is set back from the glass, and the back panel stands a centimeter off the wall, so no two faces share a plane.
-    box(group, 0, 0.15, -0.025, cw + 0.06, 0.3, cd - 0.05, mats.steelDark);
-    box(group, 0, ch / 2 + 0.15, -cd / 2 + 0.05, cw, ch, 0.08, std('#cfd8d8', { roughness: 0.5 }));
-    box(group, 0, ch + 0.2, 0, cw + 0.1, 0.16, cd + 0.06, mats.steelDark);          // the canopy
-    box(group, 0, ch + 0.05, cd / 2 - 0.06, cw, 0.05, 0.05, mats.led, { castShadow: false });
-    const posts = Math.max(2, Math.round(cw / 1.4) + 1);
-    for (let i = 0; i < posts; i++) box(group, -cw / 2 + (cw * i) / (posts - 1), ch / 2 + 0.15, cd / 2 - 0.02, 0.08, ch, 0.1, mats.metal);
-    for (const level of COOLER_LEVELS) box(group, 0, level - 0.03, 0, cw - 0.06, 0.05, 0.84, mats.metal);
-    box(group, 0, (0.3 + ch + 0.1) / 2, cd / 2 - 0.02, cw - 0.04, ch - 0.2, 0.04, mats.glass, { castShadow: false });
-    signPlane(group, piece.label, 0, ch + 0.2, cd / 2 + 0.04, Math.min(3, cw - 0.3), 0.3, coolerStyle);
-  }
-  function buildPieces() {
-    // Retail shelf fixtures have no place in the dining room or cafe kitchen.
-    // Keep empty keyed groups so old saves/layout references migrate safely, but do not render gondolas or display bins.
-    for (const piece of PIECES) {
-      const group = new GFX.Group();
-      group.visible = false;
-      scene.add(group);
-      pieceViews.set(piece.id, group);
-      pieceOfGroup.set(group, piece.id);
-    }
-  }
-
-  function checkout() {
-    const { x, z, w, d, top } = COUNTER;
-    box(scene, x, top / 2 - 0.05, z, w, top - 0.1, d, mats.wood);
-    box(scene, x, top - 0.02, z, w + 0.14, 0.1, d + 0.14, mats.dark);
-    box(scene, x - 0.3, top + 0.035, z, 0.16, 0.04, d - 0.3, mats.rubber);
-    box(scene, x + 0.2, top + 0.035, z, 0.4, 0.02, d - 0.2, mats.trim);
-    box(scene, x - w / 2 - 0.04, top / 2 - 0.05, z, 0.06, top - 0.3, d - 0.2, mats.woodDark);
-
-    // A small cafe register. Remove the inherited grocery bag stand and candy rack.
-    box(scene, x + 2.8, top + 0.13, z + 0.08, 0.42, 0.2, 0.34, mats.steelDark);
-    box(scene, x + 2.8, top + 0.32, z + 0.08, 0.38, 0.2, 0.05, mats.dark);
-    box(scene, x + 2.8, top + 0.33, z + 0.05, 0.31, 0.14, 0.018, mats.led, { castShadow: false });
-
-    // The backbar uses coffee tins and cups, not bright retail cartons.
-    const bb = BACKBAR;
-    box(scene, bb.x, 1.1, bb.z, 0.12, 2.2, bb.d, mats.woodDark);
-    for (const y of [0.5, 1.1, 1.7]) {
-      box(scene, bb.x - 0.18, y, bb.z, 0.34, 0.05, bb.d - 0.1, mats.woodLight);
-      for (const offset of [-2.2, -0.8, 0.7, 2.1]) {
-        cylinder(scene, bb.x - 0.18 + offset, y + 0.14, bb.z, 0.07, 0.07, 0.22,
-          std('#e5dcc8', { roughness: 0.5 }), 18);
-      }
-    }
-  }
-  function backroom() {
-    buildCafeKitchen(GFX, scene, mats);
-  }
-  buildPieces();
-  checkout();
-  backroom();
+  onProgress('Setting up the dining room and the kitchen', 70);
+  buildCafeBar(GFX, scene, mats);
+  buildCafeBackbar(GFX, scene);
+  buildCafeKitchen(GFX, scene, mats);
   buildCafeFurniture(GFX, scene);
 
-  // The models were being sculpted in workers all this while: wait for the first wave before standing any of them up,
-  // so nothing is baked on the page's own thread. (No workers, or a slow bake: it falls back to baking here.)
-  onProgress('Sculpting the neighborhood', 72);
-  if (typeof Worker !== 'undefined') await Promise.race([Promise.all(waits), new Promise((resolve) => setTimeout(resolve, 90000))]);
+  // ——— people: the crew and the first regulars are built behind the loading screen, the rest while the cafe is open ———
+  const people = new Map();
+  const personFor = (name) => {
+    let built = people.get(name);
+    if (!built) { built = buildPerson(GFX, name); people.set(name, built); }
+    return built;
+  };
+  const firstPeople = ['staff:lou', 'staff:bob', 'staff:waiter', 'owner', ...FIRST_WAVE.map((id) => `resident:${id}`)];
+  for (const [index, name] of firstPeople.entries()) {
+    onProgress(`Bringing in the crew and the regulars · ${index + 1} of ${firstPeople.length}`, 74 + (index / firstPeople.length) * 22);
+    await new Promise((resolve) => setTimeout(resolve, 0));        // let the loading screen repaint between people
+    personFor(name);
+  }
 
-  // The cafe does not instantiate grocery display props. Recipe ingredients are tracked in the kitchen and dry-store UI.
-  onProgress('Preparing kitchen inventory', 80);
-  const displayGroups = new Map();
-
-  // The former stockroom carton stack is removed; the cafe kitchen now has a prep station and a tidy dry store.
-
-  // ——— people ———
-  onProgress('Bringing in the staff', 86);
-  const lou = createModel(GFX, CAST['staff:lou'], { detail: DETAIL.staff });
-  const louFloor = normalizeActorHeight(lou, HUMAN_HEIGHT);
-  const louHome = [LOU_HOME[0], louFloor, LOU_HOME[2]];
-  lou.group.position.set(...louHome); lou.group.rotation.y = 0; scene.add(lou.group);
-
-  const bob = createModel(GFX, CAST['staff:bob'], { detail: DETAIL.staff });
-  const bobFloor = normalizeActorHeight(bob, HUMAN_HEIGHT);
-  const bobHome = [BOB_HOME[0], bobFloor, BOB_HOME[2]];
-  bob.group.position.set(...bobHome); bob.group.rotation.y = Math.atan2(-0.2, -1.2); scene.add(bob.group);
-
-  const waiter = createModel(GFX, CAST['staff:waiter'], { detail: DETAIL.staff });
-  const waiterFloor = normalizeActorHeight(waiter, HUMAN_HEIGHT);
-  const waiterHome = [WAITER_HOME[0], waiterFloor, WAITER_HOME[2]];
-  waiter.group.position.set(...waiterHome); waiter.group.rotation.y = Math.atan2(-6.4, 4.2); scene.add(waiter.group);
+  const crewAt = (name, home, yaw) => {
+    const model = personFor(name);
+    model.group.position.set(home[0], 0, home[2]); model.group.rotation.y = yaw; scene.add(model.group);
+    return model;
+  };
+  const louHome = [LOU_HOME[0], 0, LOU_HOME[2]], bobHome = [BOB_HOME[0], 0, BOB_HOME[2]], waiterHome = [WAITER_HOME[0], 0, WAITER_HOME[2]];
+  const lou = crewAt('staff:lou', louHome, 0);
+  const bob = crewAt('staff:bob', bobHome, Math.PI)       // facing the cooktop;
+  const waiter = crewAt('staff:waiter', waiterHome, Math.atan2(-6.4, 4.2));
 
   const staffModels = [
-    { model: lou, name: STAFF[0].name, time: 0, home: louHome, floor: louFloor, poseAccumulator: 0 },
-    { model: bob, name: STAFF[1].name, time: 1.5, home: bobHome, floor: bobFloor, poseAccumulator: 0 },
-    { model: waiter, name: STAFF[2].name, time: 2.5, home: waiterHome, floor: waiterFloor, poseAccumulator: 0, route: [waiterHome], routeStage: 'idle', routeCustomer: null },
+    { model: lou, name: STAFF[0].name, time: 0, home: louHome, floor: 0, poseAccumulator: 0 },
+    { model: bob, name: STAFF[1].name, time: 1.5, home: bobHome, floor: 0, poseAccumulator: 0 },
+    { model: waiter, name: STAFF[2].name, time: 2.5, home: waiterHome, floor: 0, poseAccumulator: 0, route: [waiterHome], routeStage: 'idle', routeCustomer: null },
   ];
 
-  const playerModel = createModel(GFX, CAST.owner, { detail: DETAIL.owner });
-  const playerScale = 0.86;
-  const playerFloor = normalizeActorHeight(playerModel, HUMAN_HEIGHT) * playerScale;
-  playerModel.group.scale.multiplyScalar(playerScale);
+  const playerModel = personFor('owner');
+  const playerFloor = 0;
   const storedPlayer = window.__ventureCafeState?.playerPosition ?? { x: PLAYER_HOME[0], z: PLAYER_HOME[2] };
   const savedPlayer = storedPlayer.z > -4.2 ? { x: PLAYER_HOME[0], z: PLAYER_HOME[2] } : storedPlayer;
   const spot = navBlocked(savedPlayer.x, savedPlayer.z) ? nearestWalkable(savedPlayer.x, savedPlayer.z) : savedPlayer;
@@ -518,7 +396,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     mesh.renderOrder = order; scene.add(mesh);
     return mesh;
   };
-  const ownerTag = makeTag('HEAD CHEF', tagStyle('#c2a26a'), 25);
+  const ownerTag = makeTag('OWNER', tagStyle('#c2a26a'), 25);
   const playerKeys = new Set();
   const keyDirections = {
     KeyW: 'up', ArrowUp: 'up', w: 'up', W: 'up', KeyS: 'down', ArrowDown: 'down', s: 'down', S: 'down',
@@ -557,7 +435,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     button.addEventListener('contextmenu', (event) => event.preventDefault());
   });
 
-  // ——— customers: residents walk in off the sidewalk, shop, queue at the counter and leave ———
+  // ——— customers: residents walk in off the sidewalk, take a seat, are served, pay at the counter and leave ———
   const customerActors = new Map();
   const readyResidents = new Set(FIRST_WAVE);
   const servicePlates = new Map(CAFE_PLACE_SETTINGS.map((place) => {
@@ -568,7 +446,6 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     scene.add(plate);
     return [place.seatId, plate];
   }));
-  const stand = (productId) => { const [x, z] = SLOTS[productId].stand; return [x, 0, z]; };
 
   function setCustomerRoute(actor, customer) {
     const here = [actor.model.group.position.x, 0, actor.model.group.position.z];
@@ -588,22 +465,22 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   }
 
   function createCustomerActor(customer) {
-    const resident = RESIDENT_BY_ID[customer.residentId] ?? RESIDENTS.find((r) => r.character === customer.character) ?? RESIDENTS[customer.id % RESIDENTS.length];
-    const model = createModel(GFX, CAST[`resident:${resident.id}`], { detail: DETAIL.resident });
-    const floor = normalizeActorHeight(model, resident.height);
+    const resident = RESIDENT_BY_ID[customer.residentId] ?? RESIDENTS[customer.id % RESIDENTS.length];
+    const model = personFor(`resident:${resident.id}`);
+    const floor = 0;
     const start = [SIDEWALK_SPAWN[0] + (customer.id % 3) * 0.5 - 0.5, 0, SIDEWALK_SPAWN[2]];
     model.group.position.set(start[0], floor, start[2]);
     scene.add(model.group);
     const actor = { model, id: customer.id, phase: null, route: [start], routeFraction: 0.6, time: customer.id * 0.7, poseAccumulator: 0, poseClip: 'idle', seatedAt: null, floor, start };
     customerActors.set(customer.id, actor);
     setCustomerRoute(actor, customer);
-    // Someone restored mid-shop starts where their clock says they should be, not out on the street.
+    // Someone restored mid-meal starts where their clock says they should be, not out on the street.
     return actor;
   }
 
   function disposeActor(actor) {
+    // The person stays built, ready for the next time they come in.
     scene.remove(actor.model.group);
-    actor.model.mesh.geometry.dispose();
   }
 
   function syncCustomers(state, dt) {
@@ -623,16 +500,15 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
       const point = pointOnRoute(actor.route, progress);
       const ahead = pointOnRoute(actor.route, Math.min(1, progress + 0.025));
       const seated = progress >= 1 && customer.phase === 'browsing';
-      // Seated diners are lifted onto the seat as they settle, and drop back to the floor when they rise.
-      const lift = seated && progress >= 1 ? SIT_LIFT * Math.min(1, Math.max(0, actor.time - (actor.seatedAt ?? actor.time)) / 0.45) : 0;
-      actor.model.group.position.set(point[0], actor.floor + lift, point[2]);
+      // A seated diner's hips drop onto the seat by themselves (the `sit` clip), so they stay on the floor plane.
+      actor.model.group.position.set(point[0], actor.floor, point[2]);
       if (progress < 1) faceAlong(actor.model.group, point, ahead);
       else if (seated && actor.seat) actor.model.group.rotation.y = actor.seat.yaw;
       else if (customer.phase === 'checkout') actor.model.group.rotation.y = Math.PI / 2;
       actor.time += dt;
       actor.poseAccumulator += dt;
       if (actor.poseAccumulator >= 0.05) {
-        const clip = progress < 1 ? 'walk' : seated ? 'sit' : customer.phase === 'checkout' ? 'idle' : 'look';
+        const clip = progress < 1 ? 'walk' : seated ? 'sit' : 'idle';
         let t = actor.time;
         if (clip === 'sit') {
           if (actor.poseClip !== 'sit') actor.seatedAt = actor.time;
@@ -656,7 +532,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
       worker.poseAccumulator += dt;
       if (worker.poseAccumulator >= 0.05) {
         const preparing = worker.name === 'Bob' && state.waiterWork?.stage === 'preparing-order';
-        worker.model.pose({ clip: preparing ? 'look' : 'idle', t: worker.time, time: worker.time, seed: worker.name.length });
+        worker.model.pose({ clip: preparing ? 'talk' : 'idle', t: worker.time, time: worker.time, seed: worker.name.length });
         worker.poseAccumulator %= 0.05;
       }
       worker.model.group.position.set(...worker.home);
@@ -708,34 +584,6 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     }
   }
 
-  let fixtureKey = '';
-  function syncFixtures(state) {
-    const owned = state.fixtures ?? [], layout = state.layout ?? {};
-    const key = owned.join(',') + JSON.stringify(layout);
-    if (key === fixtureKey) return;
-    fixtureKey = key;
-    selection.state = state;
-    setLayout(owned, layout);
-    for (const views of fixtureViews.values()) for (const view of views) view.visible = false;
-    for (const piece of PIECES) {
-      const group = pieceViews.get(piece.id), p = placementOf(piece.id);
-      group.position.set(p.x, 0, p.z); group.rotation.y = p.rot * Math.PI / 2;
-    }
-    for (const id of owned) for (const view of fixtureViews.get(id) ?? []) view.visible = true;
-    // The stock on a moved piece moves with it.
-    for (const [id, display] of displayGroups) {
-      const slot = SLOTS[id];
-      display.group.position.set(slot.x, slot.y, slot.z); display.group.rotation.y = slot.yaw;
-    }
-    drawSelection();
-  }
-
-  function syncDisplays(state) {
-    syncFixtures(state);
-    // Inventory quantities are reflected in the kitchen UI, not rendered as grocery shelf meshes.
-    // Dry-store quantities are tracked in the cafe UI; no floating retail cartons are rendered behind the counter.
-  }
-
   function updatePlayer(state, dt) {
     const canMove = state.started && !state.paused && !state.dayEnded && !state.gameOver;
     const horizontal = (playerKeys.has('right') ? 1 : 0) - (playerKeys.has('left') ? 1 : 0);
@@ -746,7 +594,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
       const speed = PLAYER_SPEED * (playerKeys.has('run') ? 1.45 : 1);
       const nextX = player.x + dx * speed * dt;
       const nextZ = player.z + dz * speed * dt;
-      // Resolve axes separately so the owner can slide along a shelf edge.
+      // Resolve axes separately so the owner can slide along a counter edge.
       if (!navBlocked(nextX, player.z)) player.x = nextX;
       if (!navBlocked(player.x, nextZ)) player.z = nextZ;
       playerModel.group.rotation.y = Math.atan2(dx, dz);
@@ -758,7 +606,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
       playerModel.pose({ clip: moving ? 'walk' : 'idle', t: player.time, time: player.time, seed: 29, pace: playerKeys.has('run') ? 1.35 : 1 });
       player.poseAccumulator %= 0.04;
     }
-    ownerTag.position.set(player.x, player.floor + 1.34, player.z);
+    ownerTag.position.set(player.x, player.floor + 1.72, player.z);
     ownerTag.quaternion.copy(stage.camera.quaternion);
     ownerTag.visible = state.started;
     state.playerPosition = { x: player.x, z: player.z };
@@ -793,7 +641,6 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   function update(state, dt, realTime = 0) {
     if (!state) return;
     state.availableResidents = readyResidents;
-    syncDisplays(state);
     const actorDt = activeFrameDelta(state, dt);
     syncCustomers(state, actorDt);
     updateStaff(state, actorDt);
@@ -804,132 +651,6 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     stage.target.set(world.focus?.[0] ?? 0, 0.5, world.focus?.[1] ?? 0.8);
     if (stage.lantern) stage.lantern.intensity = 1.1 + Math.sin(realTime * 0.8) * 0.04;
   }
-
-  // ——— rearranging: the piece being moved follows the pointer, green where it may go and red where it may not ———
-  const ghostMaterial = new GFX.MeshBasicMaterial({ color: '#6fd08c', transparent: true, opacity: 0.5, depthWrite: false });
-  const ghost = new GFX.Group(); ghost.visible = false; scene.add(ghost);
-  const ghostBody = new GFX.Mesh(new GFX.BoxGeometry(1, 0.14, 1), ghostMaterial); ghost.add(ghostBody);
-  const ghostFront = new GFX.Mesh(new GFX.BoxGeometry(0.5, 0.14, 0.2), ghostMaterial); ghost.add(ghostFront);
-  const raycaster = new GFX.Raycaster();
-  const placing = { pieceId: null, rot: 0, at: null, state: null, problem: null, pointer: null };
-  function floorAt(event) {
-    const r = host.getBoundingClientRect();
-    raycaster.setFromCamera({ x: ((event.clientX - r.left) / r.width) * 2 - 1, y: -((event.clientY - r.top) / r.height) * 2 + 1 }, stage.camera);
-    const { origin: o, direction: d } = raycaster.ray;
-    if (Math.abs(d.y) < 1e-6) return null;
-    const s = -o.y / d.y;
-    return s > 0 ? { x: o.x + d.x * s, z: o.z + d.z * s } : null;
-  }
-  function refreshGhost() {
-    if (!placing.pieceId || !placing.at) { ghost.visible = false; return; }
-    const piece = PIECE_BY_ID[placing.pieceId];
-    const p = snapPlacement(placing.pieceId, placing.at.x, placing.at.z, placing.rot);
-    placing.rot = p.rot;
-    placing.problem = placementProblem(placing.pieceId, p, placing.state?.fixtures ?? [], placing.state?.layout ?? {});
-    placing.target = p;
-    ghostBody.scale.set(piece.w, 1, piece.d); ghostBody.position.set(0, 0.07, 0);
-    ghostFront.position.set(0, 0.07, piece.d / 2 + 0.1);
-    ghost.position.set(p.x, 0.02, p.z); ghost.rotation.y = p.rot * Math.PI / 2;
-    ghostMaterial.color.set(placing.problem ? '#e0523f' : '#6fd08c');
-    ghost.visible = true;
-  }
-  const placementApi = {
-    /** Pick a piece up: it follows the pointer until it is put down or cancelled. */
-    start(pieceId, state) {
-      const p = placementOf(pieceId, state.layout);
-      Object.assign(placing, { pieceId, state, rot: p.rot, at: { x: p.x, z: p.z }, target: p, problem: null });
-      drawSelection(); refreshGhost();
-    },
-    rotate() { if (placing.pieceId) { placing.rot = (placing.rot + 1) % 4; refreshGhost(); } },
-    cancel() { placing.pieceId = null; placing.at = null; ghost.visible = false; drawSelection(); },
-    get active() { return placing.pieceId; },
-    get problem() { return placing.problem; },
-    onPlace: null,
-  };
-  function dropAt(event) {
-    if (!placing.pieceId) return;
-    const at = floorAt(event);
-    if (!at) return;
-    placing.at = at; refreshGhost();
-    if (placementApi.onPlace?.(placing.pieceId, placing.target) === true) placementApi.cancel();
-  }
-  // ——— selecting: click a piece to pick it out, click it again to pick it up ———
-  const selectMaterial = new GFX.MeshBasicMaterial({ color: '#e6b95a', transparent: true, opacity: 0.55, depthWrite: false });
-  const selectMarker = new GFX.Mesh(new GFX.BoxGeometry(1, 0.06, 1), selectMaterial); selectMarker.visible = false; scene.add(selectMarker);
-  const selection = { id: null, onSelect: null, onPickUp: null };
-  function drawSelection() {
-    const piece = selection.id && PIECE_BY_ID[selection.id];
-    if (!piece || placing.pieceId) { selectMarker.visible = false; return; }
-    const box = footprint(piece, placementOf(piece.id));
-    selectMarker.scale.set(box.w + 0.2, 1, box.d + 0.2);
-    selectMarker.position.set(box.x, 0.03, box.z);
-    selectMarker.visible = true;
-  }
-  function setSelected(id, { notify = true } = {}) {
-    selection.id = id;
-    drawSelection();
-    if (notify) selection.onSelect?.(id);
-  }
-  /** The piece under a pointer: what the ray hits first, or failing that, the piece standing where it meets the floor. */
-  function pieceAtPointer(event) {
-    const r = host.getBoundingClientRect();
-    raycaster.setFromCamera({ x: ((event.clientX - r.left) / r.width) * 2 - 1, y: -((event.clientY - r.top) / r.height) * 2 + 1 }, stage.camera);
-    try {
-      const targets = [];
-      for (const [group] of pieceOfGroup) if (group.visible) targets.push(group);
-      for (const display of displayGroups.values()) if (display.group.visible) targets.push(display.group);
-      for (const hit of raycaster.intersectObjects(targets, true)) {
-        if (hit.object.visible === false) continue;
-        for (let node = hit.object; node; node = node.parent) {
-          if (pieceOfGroup.has(node)) return pieceOfGroup.get(node);
-          const display = [...displayGroups.values()].find((d) => d.group === node);
-          if (display) return pieceOfProduct(display.product.id);
-        }
-      }
-    } catch { /* fall back to the floor */ }
-    const at = floorAt(event);
-    if (!at) return null;
-    const owned = new Set(selection.state?.fixtures ?? []);
-    for (const piece of PIECES) {
-      if (!isStanding(piece, owned)) continue;
-      const box = footprint(piece, placementOf(piece.id));
-      if (Math.abs(at.x - box.x) <= box.w / 2 + 0.15 && Math.abs(at.z - box.z) <= box.d / 2 + 0.15) return piece.id;
-    }
-    return null;
-  }
-  function pickAt(event) {
-    const id = pieceAtPointer(event);
-    if (id && id === selection.id) selection.onPickUp?.(id);
-    else setSelected(id);
-  }
-
-  let tap = null;
-  host.addEventListener('pointermove', (event) => {
-    if (!placing.pieceId) return;
-    if (event.pointerType === 'touch' && tap) return;
-    const at = floorAt(event);
-    if (at) { placing.at = at; refreshGhost(); }
-  });
-  host.addEventListener('pointerdown', (event) => { if (event.button === 0) tap = { x: event.clientX, y: event.clientY }; });
-  host.addEventListener('pointerup', (event) => {
-    if (!tap) return;
-    const moved = Math.hypot(event.clientX - tap.x, event.clientY - tap.y);
-    tap = null;
-    if (moved >= 6 || event.button !== 0) return;
-    if (placing.pieceId) dropAt(event); else pickAt(event);
-  });
-  window.addEventListener('keydown', (event) => {
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
-    const el = document.activeElement;
-    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
-    if (placing.pieceId) {
-      if (event.key === 'r' || event.key === 'R') { placementApi.rotate(); event.preventDefault(); }
-      else if (event.key === 'Escape') { placementApi.cancel(); drawSelection(); placementApi.onCancel?.(); }
-    } else if (selection.id) {
-      if (event.key === 'm' || event.key === 'M') { selection.onPickUp?.(selection.id); event.preventDefault(); }
-      else if (event.key === 'Escape') setSelected(null);
-    }
-  });
 
   // ——— camera: middle-button drag to orbit (a finger on touch screens), wheel to zoom ———
   let dragging = null;
@@ -965,25 +686,28 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   // The signage: a lit OPEN sign in the middle window.
   const openSign = signPlane(scene, 'OPEN', -1.4, 2.5, Z - 0.1, 1.25, 0.48, { background: '#285542', foreground: '#eff1d6', accent: '#8fc27e', fontSize: 56, width: 256, height: 96 });
 
-  // ——— the rest of the neighborhood bakes in the background while the shop is open ———
-  const background = backgroundJobs();
-  for (const [name, detail] of background) {
-    if (!name.startsWith('resident:')) continue;
-    library.ready(name, detail).then(() => readyResidents.add(name.slice(9)));
-  }
-  if (typeof Worker === 'undefined') for (const r of RESIDENTS) readyResidents.add(r.id);
-  library.preload(background);
+  // ——— the rest of the neighborhood is built while the cafe is open: one person every moment or two ———
+  const waiting = RESIDENTS.map((resident) => resident.id).filter((id) => !readyResidents.has(id));
+  let buildTimer = null;
+  const buildNext = () => {
+    const id = waiting.shift();
+    if (!id) return;
+    personFor(`resident:${id}`);
+    readyResidents.add(id);
+    buildTimer = setTimeout(buildNext, 600);
+  };
+  buildTimer = setTimeout(buildNext, 2500);
 
   const world = {
-    stage, scene, staffModels, player, displayGroups, update, wallGroups, placement: placementApi, pieceAt: (x, y) => ({ piece: pieceAtPointer({ clientX: x, clientY: y }), floor: floorAt({ clientX: x, clientY: y }) }), selection: { get id() { return selection.id; }, select: (id) => setSelected(id, { notify: false }), set onSelect(fn) { selection.onSelect = fn; }, set onPickUp(fn) { selection.onPickUp = fn; } },
+    stage, scene, staffModels, player, update, wallGroups,
     get wallMode() { return wallMode; },
     setWallMode(mode) { if (WALL_MODES.includes(mode)) wallMode = mode; return wallMode; },
     cycleWallMode() { wallMode = WALL_MODES[(WALL_MODES.indexOf(wallMode) + 1) % WALL_MODES.length]; return wallMode; },
     readyResidents,
-    focus: null,                      // [x, z] to aim the camera at; null for the middle of the shop
+    focus: null,                      // [x, z] to aim the camera at; null for the middle of the cafe
     setState(state) { window.__ventureCafeState = state; },
     setOpen(open) { openSign.material.color.set(open ? '#ffffff' : '#a0a0a0'); },
-    dispose() { run?.(); clearPlayerKeys(); window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', clearPlayerKeys); document.removeEventListener('visibilitychange', clearPlayerKeys); },
+    dispose() { run?.(); clearTimeout(buildTimer); clearPlayerKeys(); window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', clearPlayerKeys); document.removeEventListener('visibilitychange', clearPlayerKeys); },
   };
   window.__ventureCafeWorld = world;
   onProgress('The shutters are ready', 100);

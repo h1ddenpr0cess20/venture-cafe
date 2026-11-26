@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CAFE_SEATS, CAFE_TABLES, CAFE_BOOTHS, CAFE_BAR_STOOLS, CAFE_FURNITURE,
-  SIDEWALK_SPAWN, DOOR_IN, WAITER_HOME, KITCHEN_PASS, CAFE_SERVICE_STOPS, findWalkPath, navBlocked,
+  SIDEWALK_SPAWN, DOOR_IN, WAITER_HOME, KITCHEN_PASS, BOB_HOME, LOU_HOME, PLAYER_HOME, KITCHEN_FIXTURES, CAFE_SERVICE_STOPS, findWalkPath, navBlocked,
 } from '../src/layout.js';
 
 test('cafe includes a service bar, dining tables, booths and multiple seat types',()=>{
@@ -29,4 +29,11 @@ test('the waiter has clear routes between the dining room, kitchen pass, tables 
     assert.equal(navBlocked(stop.x, stop.z), false, `service point ${stop.id} is clear`);
     assert.ok(findWalkPath(WAITER_HOME, [stop.x, 0, stop.z], { strict: true }), `waiter can reach ${stop.id}`);
   }
+});
+
+test('every station is clear, the owner and host can be reached, and the kitchen counters stand clear of each other', () => {
+  for (const [name, home] of Object.entries({ bob: BOB_HOME, lou: LOU_HOME, player: PLAYER_HOME })) assert.equal(navBlocked(home[0], home[2]), false, `${name}'s station is clear`);
+  for (const [name, home] of Object.entries({ lou: LOU_HOME, player: PLAYER_HOME })) assert.ok(findWalkPath(DOOR_IN, home, { strict: true }), `${name}'s station is reachable`);
+  const { prep, pass } = KITCHEN_FIXTURES;
+  assert.ok(Math.abs(prep.z - pass.z) > (prep.d + pass.d) / 2, 'a walkway between the prep counter and the pass');
 });

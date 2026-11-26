@@ -1,83 +1,36 @@
 /**
- * The store's floor plan and everything that walks across it: the shell's doors,
- * the fixtures and their footprints, where each product is shelved, and the
- * waypoint pathfinder shoppers and staff share. No rendering in here, so
- * it can be tested on its own.
+ * The cafe's floor plan and everything that walks across it: the shell's doors, the dining room's furniture,
+ * the kitchen, and the waypoint pathfinder guests and staff share. No rendering in here, so it can be tested
+ * on its own.
  *
- * x runs left to right, z from the back of the store (negative) to the street
- * (positive). The default camera looks in from the street.
+ * x runs left to right, z from the back of the cafe (negative) to the street (positive). The default camera
+ * looks in from the street.
  */
 
 // ——— the shell ———
 export const SHELL = { minX: -9, maxX: 9, minZ: -7, maxZ: 7, wall: 0.3, height: 4.4 };
 export const FRONT_DOOR = { x: 2.4, width: 1.5 };            // the street door, in the front wall (z = maxZ)
-export const REAR_DOOR = { x: -5.7, width: 1.3 };            // the delivery door, in the back wall (z = minZ)
-export const BACKROOM = { minX: -8.8, maxX: -4.6, minZ: -6.85, maxZ: -2.2, doorX: -6.7, doorWidth: 1.6 };
+export const REAR_DOOR = { x: -5.7, width: 1.3 };            // the delivery door to the alley, in the back wall (z = minZ)
+/** The kitchen: walled off at the back left, with an opening to the dining room. */
+export const KITCHEN = { minX: -8.8, maxX: -4.6, minZ: -6.85, maxZ: -2.2, doorX: -6.7, doorWidth: 1.6 };
 export const SIDEWALK = { minZ: 7.15, maxZ: 10.2 };
 
-// ——— shelving ———
-export const LEVELS = [0.42, 1.04, 1.66];                     // shelf boards on the dry-goods gondola
-export const GONDOLA = { length: 4.0, depth: 1.0, height: 2.25 };   // tall enough that a cereal box on the top shelf clears the cap
-export const GONDOLA_2 = { length: 3.4, depth: 1.0, height: 2.25 };
-export const COOLER_LEVELS = [0.46, 1.2];
-export const COOLER_HEIGHT = 1.95;
-export const BIN_SIZE = 1.3;
-export const BAKERY_TOP = 0.88;
-/** The inside of the walls; a cooler's back stands against them. */
+/** The inside of the walls. */
 export const INNER = { minX: -8.85, maxX: 8.85, minZ: -6.85, maxZ: 6.85 };
-/** How far from a face a shopper stands, and how much clear floor each face needs. */
-export const FACE_REACH = 0.95;
-/** The least room a shelf, bin or table leaves between itself and a wall. */
-export const WALL_GAP = 0.15;
 
-/** Which board of the second gondola each shelf fixture is: the face (1 faces the street) and the level. */
-export const GONDOLA_2_BOARDS = { 'shelf-2': [1, 0], 'shelf-3': [1, 1], 'shelf-4': [1, 2], 'shelf-5': [-1, 0], 'shelf-6': [-1, 1], 'shelf-7': [-1, 2] };
-const GONDOLA_2_STOCK = Object.entries({ sugar: 'shelf-2', oats: 'shelf-3', peanutbutter: 'shelf-4', chips: 'shelf-5', cookies: 'shelf-6', candybar: 'shelf-7' })
-  .map(([id, fixture]) => [id, ...GONDOLA_2_BOARDS[fixture]]);
-
-/**
- * Everything that stands on the floor of the shop and can be moved about it: shelves, bins, the bakery table
- * and the coolers. Each is drawn facing +z (`rot` turns it a quarter at a time: 1 faces +x) and has a `home`, where
- * it starts. `always` ones are there from the first day; the rest stand once one of their `fixtures` (sim.js FIXTURES)
- * is bought. `stock` is what goes on it: gondola boards as [product, face, level], bins and tables as product
- * lists, coolers as rows of products from the bottom shelf up.
- */
-export const PIECES = [
-  { id: 'pantry', type: 'gondola', name: 'Kitchen pantry', w: GONDOLA.length, d: GONDOLA.depth, always: true, movable: false, fixtures: ['shelf-1'], home: { x: -6.7, z: -6.0, rot: 0 },
-    stock: [['rice', 1, 0], ['pasta', 1, 1], ['cereal', 1, 2], ['beans', -1, 0], ['coffee', -1, 1], ['flour', -1, 2]] },
-  ...['apples', 'bananas', 'tomatoes', 'lettuce', 'potatoes'].map((product, i) => ({
-    id: `produce-${i + 1}`, type: 'bin', name: 'Produce bin', w: BIN_SIZE, d: BIN_SIZE, always: false, fixtures: [], home: { x: -8.0, z: [-0.55, 0.95, 2.45, 3.95, 5.45][i], rot: 1 }, stock: [product],
-  })),
-  { id: 'bakery', type: 'table', name: 'Bakery table', w: 2.0, d: 0.9, always: false, fixtures: [], home: { x: -4.6, z: 5.4, rot: 2 }, stock: ['bread'] },
-  ...[
-    ['dairy', 'DAIRY', 3.4, -1.9, [['milk', 'yogurt'], ['cheese', 'butter']]],
-    ['meat', 'EGGS · MEAT · DELI', 3.4, 1.5, [['eggs', 'chicken'], ['beef', 'deli']]],
-    ['drinks', 'COLD DRINKS', 2.7, 4.55, [['soda'], ['water']]],
-    ['frozen', 'FROZEN', 2.7, 7.25, [['pizza'], ['icecream']]],
-  ].map(([id, label, w, x, rows]) => ({ id: `cooler-${id}`, type: 'cooler', name: `${label[0]}${label.slice(1).toLowerCase()} cooler`, label, w, d: 1.0, always: false, fixtures: [], home: { x, z: INNER.minZ + 0.5, rot: 0 }, stock: rows })),
-  // What the owner can buy (sim.js FIXTURES has what each costs and opens): a bin for each new produce line,
-  // a second gondola of snack shelves, and two reach-in cooler doors.
-  ...['oranges', 'carrots', 'onions', 'peppers', 'grapes'].map((product, i) => ({
-    id: `bin-${i + 1}`, type: 'bin', name: 'Produce bin', w: BIN_SIZE, d: BIN_SIZE, fixtures: [`bin-${i + 1}`], home: { x: i < 3 ? -5.0 : -1.8, z: [-0.1, 1.35, 2.8, 1.4, 2.9][i], rot: 1 }, stock: [product],
-  })),
-  { id: 'gondola-2', type: 'gondola', name: 'Snack gondola', w: GONDOLA_2.length, d: GONDOLA_2.depth, fixtures: Object.keys(GONDOLA_2_BOARDS), home: { x: 3.2, z: -2.4, rot: 0 }, stock: GONDOLA_2_STOCK },
-  ...[['cooler-1', -3.5, [['orangejuice'], ['bacon']]], ['cooler-2', -1.7, [['sourcream']]]].map(([id, z, rows]) => ({
-    id, type: 'cooler', name: 'Reach-in cooler', label: 'COLD', w: 1.7, d: 1.0, fixtures: [id], home: { x: INNER.maxX - 0.5, z, rot: 3 }, stock: rows,
-  })),
-];
-export const PIECE_BY_ID = Object.fromEntries(PIECES.map((p) => [p.id, p]));
-export const PIECE_OF_FIXTURE = Object.fromEntries(PIECES.flatMap((p) => p.fixtures.map((f) => [f, p.id])));
 export const COUNTER = { x: 3.8, z: -5.45, w: 7.6, d: 1.05, top: 0.95 }; // long service bar
-// Heights at the tables. A seated diner's hips sit at the engine's `sit` height, so they are lifted
-// by SIT_LIFT to rest on a seat SEAT_TOP high, with the table top a comfortable reach above it.
-export const TABLE_TOP = 0.7;
-export const SEAT_TOP = 0.36;
-export const SIT_LIFT = 0.12;
+// The world is the engine's real-size people and furniture brought down to WORLD_SCALE, so a person stands
+// 1.44 tall here and a chair's seat is 0.47 m real, SEAT_TOP here. A seated person's hips drop onto it by
+// themselves (the `sit` clip), so nothing is lifted.
+export const WORLD_SCALE = 0.82;
+export const SEAT_TOP = 0.47 * WORLD_SCALE;
+export const TABLE_TOP = 0.77 * WORLD_SCALE;
+export const BAR_STOOL_TOP = 0.75 * WORLD_SCALE;
 export const BACKBAR = { x: 3.8, z: -6.65, w: 7.3, d: 0.32 };
-export const BACKROOM_FIXTURES = {
-  rack: { x: -8.0, z: -4.3, w: 0.7, d: 2.0 },
-  desk: { x: -6.7, z: -4.7, w: 3.7, d: 0.9 },
-  pallet: { x: -5.4, z: -6.0, w: 1.2, d: 0.55 },
+/** The kitchen's two counters (cafe.js builds them): the prep counter with the cooktop, and the pass with the shelf above. */
+export const KITCHEN_FIXTURES = {
+  prep: { x: -6.7, z: -4.55, w: 3.75, d: 0.94 },
+  pass: { x: -6.7, z: -2.72, w: 3.65, d: 0.76 },
 };
 export const CAFE_TABLES = [
   { id: 'table-a', x: -3.35, z: 0.55, w: 1.35, d: 0.9 },
@@ -97,13 +50,13 @@ export const CAFE_BAR_STOOLS = [
 ];
 export const CAFE_SEATS = [
   ...CAFE_TABLES.flatMap((table) => [
-    { id: `${table.id}-west`, x: table.x - 1.15, z: table.z, yaw: Math.PI / 2, tableId: table.id, style: 'chair' },
-    { id: `${table.id}-east`, x: table.x + 1.15, z: table.z, yaw: -Math.PI / 2, tableId: table.id, style: 'chair' },
+    { id: `${table.id}-west`, x: table.x - 1.0, z: table.z, yaw: Math.PI / 2, tableId: table.id, style: 'chair' },
+    { id: `${table.id}-east`, x: table.x + 1.0, z: table.z, yaw: -Math.PI / 2, tableId: table.id, style: 'chair' },
   ]),
-  { id: 'booth-a-1', x: -7.55, z: 0.0, yaw: Math.PI / 2, tableId: 'booth-a', style: 'booth' },
-  { id: 'booth-a-2', x: -7.55, z: 1.1, yaw: Math.PI / 2, tableId: 'booth-a', style: 'booth' },
-  { id: 'booth-b-1', x: -7.55, z: 3.7, yaw: Math.PI / 2, tableId: 'booth-b', style: 'booth' },
-  { id: 'booth-b-2', x: -7.55, z: 4.8, yaw: Math.PI / 2, tableId: 'booth-b', style: 'booth' },
+  { id: 'booth-a-1', x: -7.85, z: 0.0, yaw: Math.PI / 2, tableId: 'booth-a', style: 'booth' },
+  { id: 'booth-a-2', x: -7.85, z: 1.1, yaw: Math.PI / 2, tableId: 'booth-a', style: 'booth' },
+  { id: 'booth-b-1', x: -7.85, z: 3.7, yaw: Math.PI / 2, tableId: 'booth-b', style: 'booth' },
+  { id: 'booth-b-2', x: -7.85, z: 4.8, yaw: Math.PI / 2, tableId: 'booth-b', style: 'booth' },
   ...CAFE_BAR_STOOLS.map((seat) => ({ ...seat, tableId: 'bar', style: 'stool' })),
 ];
 export const CAFE_SERVICE_STOPS = [
@@ -119,7 +72,7 @@ export const CAFE_SERVICE_STOPS = [
     id: booth.id,
     x: -4.75,
     z: booth.z,
-    plateX: -5.85,
+    plateX: -6.7,
     plateZ: booth.z,
     plateKind: 'omelette',
   })),
@@ -129,84 +82,16 @@ const PLATE_KINDS = ['scramble', 'sunny', 'omelette'];
 export const CAFE_PLACE_SETTINGS = CAFE_SEATS.filter((seat) => seat.style !== 'stool').map((seat, index) => ({
   seatId: seat.id,
   tableId: seat.tableId,
-  x: seat.style === 'booth' ? -6.15 : seat.x + Math.sin(seat.yaw) * 0.8,
+  x: seat.style === 'booth' ? -6.7 : seat.x + Math.sin(seat.yaw) * 0.62,
   z: seat.z,
   plateKind: PLATE_KINDS[index % PLATE_KINDS.length],
 }));
 export const CAFE_FURNITURE = [
-  ...CAFE_TABLES.map((table) => ({ x: table.x, z: table.z, w: table.w, d: table.d })),
+  // A table blocks its top less the 0.15 at each end that a diner's knees go under, so a seat beside it is reachable.
+  ...CAFE_TABLES.map((table) => ({ x: table.x, z: table.z, w: table.w - 0.3, d: table.d })),
   ...CAFE_BOOTHS.map((booth) => ({ x: booth.x - 0.67, z: booth.z, w: 0.14, d: booth.depth + 0.12 })),
 ];
 export const CAFE_EXTERIOR_BLOCKERS = []; // The entrance is clear; the old mascot plinths were removed.
-
-/**
- * Where each product is shelved: the middle of its slot, the board's height, how
- * wide and deep the slot is, and the way it faces (yaw, radians; 0 faces the
- * street). `kind` says what holds it. `stand` is where a shopper stands to browse.
- * They follow their piece about the shop (see `refreshSlots`).
- */
-export const SLOTS = {};
-
-/** Each product's place in its piece's own frame, before the piece is put anywhere: [piece id, local slot]. */
-const LOCAL_SLOTS = (() => {
-  const out = {};
-  for (const piece of PIECES) {
-    if (piece.type === 'gondola') {
-      for (const [id, face, level] of piece.stock) out[id] = [piece.id, { kind: 'gondola', lx: 0, y: LEVELS[level], lz: face * 0.27, width: piece.w - 0.3, depth: 0.5, yaw: face > 0 ? 0 : Math.PI, stand: [0, face * 1.35] }];
-    } else if (piece.type === 'bin') {
-      for (const id of piece.stock) out[id] = [piece.id, { kind: 'bin', lx: 0, y: 0.4, lz: 0, width: 1.1, depth: 1.1, yaw: 0, stand: [0, 1.6] }];
-    } else if (piece.type === 'table') {
-      for (const id of piece.stock) out[id] = [piece.id, { kind: 'table', lx: 0, y: BAKERY_TOP, lz: 0, width: piece.w - 0.3, depth: 0.6, yaw: 0, stand: [0, 1.3] }];
-    } else {
-      piece.stock.forEach((row, level) => row.forEach((id, i) => {
-        const half = (piece.w - 0.3) / row.length;
-        out[id] = [piece.id, { kind: 'cooler', lx: -piece.w / 2 + 0.15 + half * (i + 0.5), y: COOLER_LEVELS[level], lz: 0, width: half - 0.08, depth: 0.74, yaw: 0, stand: [0, piece.d / 2 + FACE_REACH] }];
-      }));
-    }
-  }
-  return out;
-})();
-
-/** The piece a product stands on. */
-export const pieceOfProduct = (productId) => LOCAL_SLOTS[productId]?.[0] ?? null;
-
-/** The products that stand on a piece. */
-export const LOCAL_PRODUCTS = (pieceId) => Object.entries(LOCAL_SLOTS).filter(([, [piece]]) => piece === pieceId).map(([id]) => id);
-
-// ——— where the pieces stand ———
-let owned = new Set();
-let moved = {};
-/** A piece's placement: where the owner put it, or its home. */
-export const placementOf = (id, layout = moved) => layout[id] ?? PIECE_BY_ID[id].home;
-/** Whether a piece is on the floor: the ones the shop opens with always are, the rest once one of their fixtures is bought. */
-export const isStanding = (piece, ids) => piece.always || piece.fixtures.some((f) => ids.has(f));
-const standing = isStanding;
-
-/** A point in a piece's own frame as a point on the floor. */
-function toWorld(p, lx, lz) {
-  const a = p.rot * Math.PI / 2, s = Math.sin(a), c = Math.cos(a);
-  return [p.x + lx * c + lz * s, p.z - lx * s + lz * c];
-}
-
-/** Put every product where its piece stands. */
-function refreshSlots() {
-  for (const [id, [pieceId, local]] of Object.entries(LOCAL_SLOTS)) {
-    const p = placementOf(pieceId);
-    const [x, z] = toWorld(p, local.lx, local.lz);
-    const [sx, sz] = toWorld(p, local.stand[0], local.stand[1]);
-    SLOTS[id] = { kind: local.kind, x, y: local.y, z, width: local.width, depth: local.depth, yaw: p.rot * Math.PI / 2 + local.yaw, stand: [sx, sz] };
-  }
-}
-refreshSlots();
-
-/** Tell the floor plan which pieces are bought and where the owner has put them (`layout`: piece id → { x, z, rot }). */
-export function setLayout(ownedIds, layout = {}) { owned = new Set(ownedIds); moved = { ...layout }; refreshSlots(); }
-
-/** The floor a piece covers, as a box on the floor: a quarter turn swaps its width and depth. */
-export function footprint(piece, p) {
-  const sideways = p.rot % 2 !== 0;
-  return { x: p.x, z: p.z, w: sideways ? piece.d : piece.w, d: sideways ? piece.w : piece.d };
-}
 
 // ——— where people go ———
 export const DOOR_IN = [FRONT_DOOR.x, 0, 6.5];
@@ -214,10 +99,10 @@ export const SIDEWALK_SPAWN = [FRONT_DOOR.x + 0.2, 0, 9.5];
 export const SIDEWALK_EXITS = [[-6.5, 0, 9.5], [8.2, 0, 9.5]];
 export const CHECKOUT = [3.8, 0, -4.05];
 export const LOU_HOME = [3.8, 0, -6.35];                    // counter host behind the service bar
-export const BOB_HOME = [-7.0, 0, -3.35];                  // Bob's kitchen/barista station
+export const BOB_HOME = [-7.0, 0, -3.55];                  // Bob's station, in the walkway between the prep counter and the pass
 export const WAITER_HOME = [6.4, 0, -1.8];                 // dining-room service station
 export const KITCHEN_PASS = [-6.7, 0, -1.82];                 // just outside the kitchen pass
-export const PLAYER_HOME = [1.1, 0, -6.18];
+export const PLAYER_HOME = [1.1, 0, -6.35];
 
 /**
  * The street furniture round the shop, from the engine's `scenery/street` (world.js stands the
@@ -243,22 +128,22 @@ export const STREET_ITEMS = [
 
 
 // ——— navigation ———
-// Footprints are inflated by `clearance` so a shopper has room for their
-// shoulders; the same grid drives shoppers, staff and the owner.
+// Footprints are inflated by `clearance` so a guest has room for their
+// shoulders; the same grid drives guests, staff and the owner.
 export const NAV = { minX: -8.5, maxX: 8.5, minZ: -6.5, maxZ: 10.3, step: 0.3, clearance: 0.34 };
 
 const w = SHELL.wall;
 const doorL = FRONT_DOOR.x - FRONT_DOOR.width / 2, doorR = FRONT_DOOR.x + FRONT_DOOR.width / 2;
-const gapL = BACKROOM.doorX - BACKROOM.doorWidth / 2, gapR = BACKROOM.doorX + BACKROOM.doorWidth / 2;
+const gapL = KITCHEN.doorX - KITCHEN.doorWidth / 2, gapR = KITCHEN.doorX + KITCHEN.doorWidth / 2;
 export const NAV_BLOCKERS = [
   // the front wall, broken at the door
   { x: (-SHELL.maxX - 0.1 + doorL) / 2, z: SHELL.maxZ, w: doorL + SHELL.maxX + 0.1, d: w + 0.04 },
   { x: (doorR + SHELL.maxX + 0.1) / 2, z: SHELL.maxZ, w: SHELL.maxX + 0.1 - doorR, d: w + 0.04 },
-  // the backroom's walls, broken at the door to the floor
-  { x: BACKROOM.maxX, z: (BACKROOM.minZ + BACKROOM.maxZ) / 2, w, d: BACKROOM.maxZ - BACKROOM.minZ },
-  { x: (BACKROOM.minX + gapL) / 2, z: BACKROOM.maxZ, w: gapL - BACKROOM.minX, d: w },
-  { x: (gapR + BACKROOM.maxX) / 2, z: BACKROOM.maxZ, w: BACKROOM.maxX - gapR, d: w },
-  ...Object.values(BACKROOM_FIXTURES),
+  // the kitchen's walls, broken at the door to the floor
+  { x: KITCHEN.maxX, z: (KITCHEN.minZ + KITCHEN.maxZ) / 2, w, d: KITCHEN.maxZ - KITCHEN.minZ },
+  { x: (KITCHEN.minX + gapL) / 2, z: KITCHEN.maxZ, w: gapL - KITCHEN.minX, d: w },
+  { x: (gapR + KITCHEN.maxX) / 2, z: KITCHEN.maxZ, w: KITCHEN.maxX - gapR, d: w },
+  ...Object.values(KITCHEN_FIXTURES),
   { x: COUNTER.x, z: COUNTER.z, w: COUNTER.w, d: COUNTER.d },
   ...CAFE_FURNITURE,
   ...CAFE_EXTERIOR_BLOCKERS,
@@ -270,7 +155,7 @@ const inside = (b, x, z, r) => x >= b.x - b.w / 2 - r && x <= b.x + b.w / 2 + r 
 export function navBlocked(x, z) {
   if (x < NAV.minX || x > NAV.maxX || z < NAV.minZ || z > NAV.maxZ) return true;
   const r = NAV.clearance;
-  return NAV_BLOCKERS.some((b) => inside(b, x, z, r)) || PIECES.some((piece) => standing(piece, owned) && inside(footprint(piece, placementOf(piece.id)), x, z, r));
+  return NAV_BLOCKERS.some((b) => inside(b, x, z, r));
 }
 
 export function nearestWalkable(x, z) {
@@ -420,99 +305,4 @@ export function pointOnRoute(route, progress) {
     remaining -= length;
   }
   return [...route[route.length - 1]];
-}
-
-// ——— putting the bought pieces where the owner wants them ———
-
-const BACKROOM_BOX = { x: (BACKROOM.minX + BACKROOM.maxX) / 2, z: (BACKROOM.minZ + BACKROOM.maxZ) / 2, w: BACKROOM.maxX - BACKROOM.minX + SHELL.wall, d: BACKROOM.maxZ - BACKROOM.minZ + SHELL.wall };
-const DOOR_BOX = { x: FRONT_DOOR.x, z: INNER.maxZ - 0.8, w: FRONT_DOOR.width + 1.0, d: 1.6 };
-/** Floor that is already taken, whether or not anything walks there. */
-const TAKEN = [...NAV_BLOCKERS, BACKROOM_BOX, DOOR_BOX];
-const overlap = (a, b) => Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 0.03 && Math.abs(a.z - b.z) < (a.d + b.d) / 2 - 0.03;
-const within = (box, margin = 0) => box.x - box.w / 2 >= INNER.minX + margin - 1e-6 && box.x + box.w / 2 <= INNER.maxX - margin + 1e-6
-  && box.z - box.d / 2 >= INNER.minZ + margin - 1e-6 && box.z + box.d / 2 <= INNER.maxZ - margin + 1e-6;
-const frontOf = (rot) => [Math.sin(rot * Math.PI / 2), Math.cos(rot * Math.PI / 2)];
-
-/** The clear floor a face needs: a strip as wide as the piece, `side` being 1 for its front and -1 for its back. */
-function faceStrip(piece, p, side) {
-  const [fx, fz] = frontOf(p.rot);
-  const box = footprint(piece, p);
-  const reach = FACE_REACH, alongX = p.rot % 2 === 0;
-  return { x: p.x + fx * side * (piece.d / 2 + reach / 2), z: p.z + fz * side * (piece.d / 2 + reach / 2), w: alongX ? box.w - 0.2 : reach, d: alongX ? reach : box.d - 0.2 };
-}
-
-/**
- * The cooler wall nearest a point, with the placement of a cooler against it: back to the wall, glass
- * facing in, slid along the wall to `x`/`z` (kept clear of the corners).
- */
-function snapToWall(piece, x, z) {
-  const walls = [
-    { dist: z - INNER.minZ, rot: 0 }, { dist: x - INNER.minX, rot: 1 },
-    { dist: INNER.maxZ - z, rot: 2 }, { dist: INNER.maxX - x, rot: 3 },
-  ].sort((a, b) => a.dist - b.dist);
-  const rot = walls[0].rot, half = piece.d / 2, along = piece.w / 2;
-  const grid = (v) => Math.round(v * 10) / 10;
-  if (rot === 0) return { rot, x: Math.min(INNER.maxX - along, Math.max(INNER.minX + along, grid(x))), z: INNER.minZ + half };
-  if (rot === 2) return { rot, x: Math.min(INNER.maxX - along, Math.max(INNER.minX + along, grid(x))), z: INNER.maxZ - half };
-  if (rot === 1) return { rot, x: INNER.minX + half, z: Math.min(INNER.maxZ - along, Math.max(INNER.minZ + along, grid(z))) };
-  return { rot, x: INNER.maxX - half, z: Math.min(INNER.maxZ - along, Math.max(INNER.minZ + along, grid(z))) };
-}
-
-/** Where a piece lands for a pointer at (x, z): coolers slide to the nearest wall, the rest snap to the grid and keep their turn. */
-export function snapPlacement(pieceId, x, z, rot = 0) {
-  const piece = PIECE_BY_ID[pieceId];
-  if (piece.type === 'cooler') return snapToWall(piece, x, z);
-  const grid = (v) => Math.round(v * 10) / 10;
-  return { x: grid(x), z: grid(z), rot: ((rot % 4) + 4) % 4 };
-}
-
-/**
- * Why a piece cannot stand here, or null: 'out' (outside the shop), 'blocked' (something is there),
- * 'wall' (a shelf or bin must stand clear of walls on every side so both faces can be reached),
- * 'needs-wall' (a cooler's back must be flat to a wall), 'door' (the door or a face would be shut off).
- */
-export function placementProblem(pieceId, p, ownedIds, layout = {}) {
-  const piece = PIECE_BY_ID[pieceId];
-  const box = footprint(piece, p);
-  const isCooler = piece.type === 'cooler';
-  if (!within(box)) return 'out';
-  const others = PIECES.filter((o) => o.id !== pieceId && standing(o, new Set(ownedIds))).map((o) => footprint(o, placementOf(o.id, layout)));
-  if ([...TAKEN, ...others].some((b) => overlap(box, b))) return 'blocked';
-  if (isCooler) {
-    const [fx, fz] = frontOf(p.rot);
-    const back = { x: p.x - fx * piece.d / 2, z: p.z - fz * piece.d / 2 };
-    const flush = p.rot === 0 ? back.z - INNER.minZ : p.rot === 2 ? INNER.maxZ - back.z : p.rot === 1 ? back.x - INNER.minX : INNER.maxX - back.x;
-    if (Math.abs(flush) > 0.02) return 'needs-wall';
-  } else if (!within(box, WALL_GAP)) return 'wall';
-  const strips = [faceStrip(piece, p, 1), ...(piece.type === 'gondola' ? [faceStrip(piece, p, -1)] : [])];
-  for (const strip of strips) {
-    if (!within(strip)) return 'wall';
-    if ([...TAKEN, ...others].some((b) => overlap(strip, b))) return 'blocked';
-  }
-  return null;
-}
-
-/** Run `fn` as if these pieces were bought and standing here, then put the real layout back. */
-function withLayout(ownedIds, layout, fn) {
-  const before = [owned, moved];
-  setLayout(ownedIds, layout);
-  try { return fn(); } finally { setLayout(before[0], before[1]); }
-}
-
-/** Whether the whole shop still works with the layout: the door, the till, the staff and every line stay reachable. */
-export function shopStillWorks(ownedIds, layout, extraStands = []) {
-  return withLayout(ownedIds, layout, () => {
-    const from = [SIDEWALK_SPAWN[0], 0, SIDEWALK_SPAWN[2]];
-    const keys = [CHECKOUT, BOB_HOME, DOOR_IN, ...extraStands];
-    // Lines on pieces that are not bought have nowhere to stand yet.
-    const live = Object.entries(SLOTS).filter(([id]) => !LOCAL_SLOTS[id] || standing(PIECE_BY_ID[LOCAL_SLOTS[id][0]], new Set(ownedIds))).map(([, s]) => [s.stand[0], 0, s.stand[1]]);
-    return [...keys, ...live].every((to) => !navBlocked(to[0], to[2]) && findWalkPath(from, to, { strict: true }));
-  });
-}
-
-/** The full test for putting a piece down: the geometry, and the shop still working. Returns null if it is fine, or the reason. */
-export function canPlace(pieceId, p, ownedIds, layout = {}) {
-  const problem = placementProblem(pieceId, p, ownedIds, layout);
-  if (problem) return problem;
-  return shopStillWorks(ownedIds, { ...layout, [pieceId]: p }) ? null : 'door';
 }
