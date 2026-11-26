@@ -303,17 +303,13 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   right.plane('NEXT PLEASE', W - 0.2, 3.3, COUNTER.z, 2.6, 0.5, { background: '#354b47', foreground: '#f0e7cf', accent: '#d9a55f', fontSize: 52, width: 768, height: 104 }, -Math.PI / 2);
 
   // The kitchen's own walls, shorter than the shell: they hide the room from either side, so they fade from both.
-  const partitionH = 3.0;
+  const partitionH = 1.1;
   const partNS = wall('kitchen-east', { normal: [1, 0], both: true });
   partNS.brick(br.maxX, partitionH / 2, (br.minZ + br.maxZ - T / 2) / 2, T, partitionH, br.maxZ - T / 2 - br.minZ, '#b9b2a2');   // from the back wall to the south partition's face
-  partNS.plane('KITCHEN', br.maxX + 0.17, 2.3, -4.3, 1.8, 0.36, { background: '#3d5148', foreground: '#f4e9d1', accent: '#d6b578', fontSize: 40, width: 576, height: 92 }, Math.PI / 2);
   const partEW = wall('kitchen-south', { normal: [0, 1], both: true });
   const gapL = br.doorX - br.doorWidth / 2, gapR = br.doorX + br.doorWidth / 2;
   partEW.brick((br.minX - T + gapL) / 2, partitionH / 2, br.maxZ, gapL - br.minX + T, partitionH, T, '#b9b2a2');
   partEW.brick((gapR + br.maxX + T / 2) / 2, partitionH / 2, br.maxZ, br.maxX + T / 2 - gapR, partitionH, T, '#b9b2a2');
-  partEW.brick(br.doorX, (2.3 + partitionH) / 2, br.maxZ, br.doorWidth, partitionH - 2.3, T, '#b9b2a2');
-  partEW.frame(gapL, 1.15, br.maxZ, 0.08, 2.3, 0.4);
-  partEW.frame(gapR, 1.15, br.maxZ, 0.08, 2.3, 0.4);
 
   // The buildings either side.
   const leftNeighbor = wall('neighbor-left', { normal: [-1, 0] });

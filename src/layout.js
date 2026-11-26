@@ -27,10 +27,15 @@ export const SEAT_TOP = 0.47 * WORLD_SCALE;
 export const TABLE_TOP = 0.77 * WORLD_SCALE;
 export const BAR_STOOL_TOP = 0.75 * WORLD_SCALE;
 export const BACKBAR = { x: 3.8, z: -6.65, w: 7.3, d: 0.32 };
-/** The kitchen's two counters (cafe.js builds them): the prep counter with the cooktop, and the pass with the shelf above. */
+/**
+ * The kitchen is an open galley: the cooktop run along the back wall, a sink counter down the west wall, and a pass
+ * counter either side of the doorway to the dining room (cafe.js builds them). Each is a footprint on the floor.
+ */
 export const KITCHEN_FIXTURES = {
-  prep: { x: -6.7, z: -4.55, w: 3.75, d: 0.94 },
-  pass: { x: -6.7, z: -2.72, w: 3.65, d: 0.76 },
+  cooktop: { x: -6.65, z: -6.45, w: 3.7, d: 0.8 },
+  sink: { x: -8.45, z: -4.35, w: 0.8, d: 2.5 },
+  passWest: { x: -8.15, z: -2.62, w: 1.3, d: 0.5 },
+  passEast: { x: -5.25, z: -2.62, w: 1.3, d: 0.5 },
 };
 export const CAFE_TABLES = [
   { id: 'table-a', x: -3.35, z: 0.55, w: 1.35, d: 0.9 },
@@ -99,7 +104,7 @@ export const SIDEWALK_SPAWN = [FRONT_DOOR.x + 0.2, 0, 9.5];
 export const SIDEWALK_EXITS = [[-6.5, 0, 9.5], [8.2, 0, 9.5]];
 export const CHECKOUT = [3.8, 0, -4.05];
 export const LOU_HOME = [3.8, 0, -6.35];                    // counter host behind the service bar
-export const BOB_HOME = [-7.0, 0, -3.55];                  // Bob's station, in the walkway between the prep counter and the pass
+export const BOB_HOME = [-7.2, 0, -5.45];                  // Bob's station, at the cooktop with his back to the dining room
 export const WAITER_HOME = [6.4, 0, -1.8];                 // dining-room service station
 export const KITCHEN_PASS = [-6.7, 0, -1.82];                 // just outside the kitchen pass
 export const PLAYER_HOME = [1.1, 0, -6.35];

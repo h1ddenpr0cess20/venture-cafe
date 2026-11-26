@@ -3,7 +3,7 @@ import { createWoodTable } from 'madness-engine/props/wood-table';
 import { createWoodChair } from 'madness-engine/props/wood-chair';
 import { createWoodBoard } from 'madness-engine/props/wood-board';
 import { createBookcase, woodMaterial, woodUV } from 'madness-engine/props/bookcase';
-import { COUNTER, BACKBAR, CAFE_TABLES, CAFE_BOOTHS, CAFE_BAR_STOOLS, CAFE_SEATS, WORLD_SCALE, SEAT_TOP, TABLE_TOP } from './layout.js';
+import { COUNTER, BACKBAR, KITCHEN, KITCHEN_FIXTURES, CAFE_TABLES, CAFE_BOOTHS, CAFE_BAR_STOOLS, CAFE_SEATS, WORLD_SCALE, SEAT_TOP, TABLE_TOP } from './layout.js';
 import { createBreakfastPlate } from './cafe-food.js';
 
 /** The cafe's wood: walnut for the furniture and the bar, in the engine's lacquer. */
@@ -133,31 +133,59 @@ export function buildCafeBackbar(GFX, scene) {
 }
 
 export function buildCafeKitchen(GFX, scene, mats) {
-  const steel = new GFX.MeshStandardMaterial({ color: '#687a74', metalness: 0.48, roughness: 0.38 });
-  const marble = new GFX.MeshStandardMaterial({ color: '#d7d1c3', roughness: 0.58 });
+  const steel = new GFX.MeshStandardMaterial({ color: '#8d9a98', metalness: 0.6, roughness: 0.32 });
+  const steelDark = new GFX.MeshStandardMaterial({ color: '#4f5a59', metalness: 0.5, roughness: 0.4 });
+  const marble = new GFX.MeshStandardMaterial({ color: '#d7d1c3', roughness: 0.5 });
   const wood = woodMaterial(GFX, SPECIES, FINISH);
   const carcass = woodMaterial(GFX, SPECIES, 'sanded');
-  // The prep counter, with the cooktop and the cast-iron pan.
-  lumber(GFX, scene, carcass, -6.7, 0.46, -4.55, 3.65, 0.92, 0.84, 'x');
-  box(GFX, scene, -6.7, 0.94, -4.55, 3.75, 0.08, 0.94, marble);
-  box(GFX, scene, -6.7, 1.06, -4.55, 1.2, 0.12, 0.96, steel);
-  for (const x of [-7.9, -7.2, -6.5]) {
-    cylinder(GFX, scene, x, 1.04, -4.55, 0.2, 0.2, 0.06, steel, 24);
-    cylinder(GFX, scene, x, 1.077, -4.55, 0.11, 0.11, 0.014, mats.dark, 24);
+  const { cooktop, sink, passWest, passEast } = KITCHEN_FIXTURES;
+  const TOP = 0.95;
+  /** A counter: a walnut carcass with a marble top, on a footprint from the layout. */
+  const counter = ({ x, z, w, d }, grain = 'x') => {
+    lumber(GFX, scene, carcass, x, (TOP - 0.05) / 2, z, w - 0.04, TOP - 0.05, d - 0.04, grain);
+    box(GFX, scene, x, TOP - 0.02, z, w + 0.04, 0.05, d + 0.04, marble);
+  };
+
+  // The cooktop run against the back wall: four burners, a steel backsplash and a hood over them.
+  counter(cooktop);
+  box(GFX, scene, cooktop.x, 1.4, cooktop.z - cooktop.d / 2 + 0.02, cooktop.w, 0.9, 0.04, steel);                 // the backsplash
+  const burnerX = [-7.85, -7.2, -6.55, -5.9];
+  box(GFX, scene, -6.875, TOP + 0.04, cooktop.z, 2.2, 0.04, 0.62, steelDark);                                       // the cooktop plate
+  for (const x of burnerX) {
+    cylinder(GFX, scene, x, TOP + 0.07, cooktop.z, 0.14, 0.14, 0.03, mats.dark, 24);
+    cylinder(GFX, scene, x, TOP + 0.09, cooktop.z, 0.08, 0.08, 0.02, steelDark, 24);
   }
-  const pan = buildPan(GFX); pan.scale.setScalar(0.09); pan.rotation.y = Math.PI / 2; pan.position.set(-7.25, 1.11, -4.55); scene.add(pan);
-  // The pass: a counter between kitchen and dining room, with an open shelf over it.
-  lumber(GFX, scene, carcass, -6.7, 0.48, -2.72, 3.55, 0.96, 0.66, 'x');
-  box(GFX, scene, -6.7, 0.99, -2.72, 3.65, 0.08, 0.76, marble);
-  lumber(GFX, scene, wood, -6.7, 1.75, -3.05, 3.35, 0.05, 0.25, 'x');
-  lumber(GFX, scene, wood, -6.7, 2.27, -3.05, 3.35, 0.05, 0.25, 'x');
-  for (const x of [-8.2, -5.2]) for (const y of [1.98, 2.5]) lumber(GFX, scene, wood, x, y, -3.05, 0.05, 1.08, 0.05, 'y');
-  // On the shelves: crocks of utensils and a stack of plates, in place of shop stock.
-  const crock = new GFX.MeshStandardMaterial({ color: '#b9724a', roughness: 0.6 });
+  box(GFX, scene, -6.875, 2.2, cooktop.z - 0.05, 2.4, 0.18, 0.7, steel);                                            // the hood
+  box(GFX, scene, -6.875, 2.65, cooktop.z - 0.28, 0.7, 0.9, 0.3, steel);                                            // and its flue
+
+  // The skillet: the engine's cast-iron pan at the size of one, on the second burner, its handle toward the cook.
+  const pan = buildPan(GFX);
+  pan.scale.setScalar(0.026); pan.rotation.y = -Math.PI / 2; pan.position.set(-7.2, TOP + 0.11, cooktop.z + 0.02);
+  scene.add(pan);
+
+  // The sink counter down the west wall, with a basin and a tap.
+  counter(sink, 'z');
+  box(GFX, scene, sink.x + 0.02, TOP + 0.005, sink.z - 0.2, 0.5, 0.02, 0.7, steelDark);                             // the basin
+  cylinder(GFX, scene, sink.x - 0.25, TOP + 0.22, sink.z - 0.2, 0.025, 0.025, 0.42, steel, 12);                    // the tap's neck
+  box(GFX, scene, sink.x - 0.1, TOP + 0.43, sink.z - 0.2, 0.3, 0.04, 0.04, steel);
+  const board = createWoodBoard(GFX, { species: SPECIES, finish: 'sanded', length: 0.55, width: 0.34, thickness: 0.04 });
+  board.group.position.set(sink.x, TOP + 0.045, sink.z + 0.8); board.group.rotation.y = Math.PI / 2; scene.add(board.group);
+
+  // The pass: a counter either side of the doorway, where finished plates are set down for the waiter.
+  counter(passWest); counter(passEast);
   const plate = new GFX.MeshStandardMaterial({ color: '#f4eedf', roughness: 0.28 });
-  for (const x of [-8.0, -7.5, -5.7]) cylinder(GFX, scene, x, 1.75 + 0.1, -3.05, 0.07, 0.065, 0.16, crock, 18);
-  for (let i = 0; i < 7; i++) cylinder(GFX, scene, -6.7, 2.3 + i * 0.016, -3.05, 0.13, 0.12, 0.014, plate, 24);
-  // A cutting board on the prep counter, from the engine's wood boards.
-  const board = createWoodBoard(GFX, { species: 'walnut', finish: 'sanded', length: 0.6, width: 0.34, thickness: 0.04 });
-  board.group.position.set(-5.5, 1.0, -4.55); scene.add(board.group);
+  for (let i = 0; i < 4; i++) cylinder(GFX, scene, passEast.x, TOP + 0.05 + i * 0.016, passEast.z, 0.13, 0.12, 0.014, plate, 24);
+  cylinder(GFX, scene, passWest.x, TOP + 0.08, passWest.z, 0.03, 0.04, 0.06, steel, 16);                            // the service bell
+
+  // Open shelves screwed to the back wall either side of the hood, with brackets under each board.
+  const crock = new GFX.MeshStandardMaterial({ color: '#b9724a', roughness: 0.6 });
+  const wallZ = KITCHEN.minZ + 0.14;
+  for (const [x0, x1] of [[-8.45, -7.75], [-5.9, -4.95]]) {
+    for (const y of [1.65, 2.2]) {
+      lumber(GFX, scene, wood, (x0 + x1) / 2, y, wallZ, x1 - x0, 0.045, 0.26, 'x');
+      for (const x of [x0 + 0.1, x1 - 0.1]) box(GFX, scene, x, y - 0.1, wallZ - 0.06, 0.04, 0.16, 0.1, steelDark);
+    }
+    for (const x of [x0 + 0.2, (x0 + x1) / 2, x1 - 0.2]) cylinder(GFX, scene, x, 1.65 + 0.11, wallZ, 0.06, 0.055, 0.17, crock, 18);
+    for (let i = 0; i < 5; i++) cylinder(GFX, scene, (x0 + x1) / 2, 2.2 + 0.03 + i * 0.016, wallZ, 0.12, 0.11, 0.014, plate, 24);
+  }
 }

@@ -302,7 +302,7 @@ function awardStoreExperience(state, amount) {
   const level = getStoreLevel(state);
   if (level > previousLevel) {
     const opened = CAFE_MENU.filter((item) => (item.level ?? 1) > previousLevel && (item.level ?? 1) <= level).map((item) => item.name);
-    pushEvent(state, 'level', `Cafe level up · Level ${level}!`, opened.length ? `New on the menu: ${opened.join(', ')}.` : `Business experience ${state.experience} · keep serving the neighborhood.`);
+    pushEvent(state, 'level', `Cafe level up · Level ${level}!`, opened.length ? `New on the menu: ${opened.join(', ')}.` : `Cafe experience: ${state.experience}.`);
   }
 }
 
@@ -767,7 +767,7 @@ export function beginDay(state) {
   state.started = true;
   state.paused = false;
   state.nextArrival = state.minute + (10 + state.random() * 14) / trafficMultiplier(state);
-  pushEvent(state, 'good', 'The shutters are up.', 'First customer should be along shortly.');
+  pushEvent(state, 'good', 'The cafe is open.', 'First customer should be along shortly.');
   return true;
 }
 

@@ -6,12 +6,6 @@ import {
   isExpired, qtyOf, pullExpired, adjustMenuPrice, placeOrder, borrowCredit, repayCredit, advanceGame, beginDay,
   togglePause, startNextDay, saveGameState, loadGameState, trafficLabel, reviewSummary, pantryHealth,
 } from './sim.js';
-import '@fontsource/playfair-display/600.css';
-import '@fontsource/playfair-display/700.css';
-import '@fontsource/oswald/400.css';
-import '@fontsource/oswald/500.css';
-import '@fontsource/oswald/600.css';
-import '@fontsource/caveat/600.css';
 import { createVentureCafeWorld } from './world.js';
 import { CAFE_MENU } from './menu.js';
 import { CAFE_TABLES, CAFE_BOOTHS, CAFE_BAR_STOOLS, CAFE_SEATS } from './layout.js';
@@ -46,12 +40,12 @@ function updateLoading(label, progress) {
 
 const audio = createAudio({ storageKey: 'venture-cafe.muted', glue: true });
 audioMuted = audio.muted;
-updateLoading('Warming the cafe and preparing the dining room', 0);
+updateLoading('Starting up', 0);
 let world;
 try {
   world = await createVentureCafeWorld($('#world'), updateLoading);
   world.setState(state);
-  updateLoading('Everything is ready. Welcome to the cafe.', 100);
+  updateLoading('Ready', 100);
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   $('#loading-overlay')?.classList.add('loading-finished');
   await new Promise((resolve) => setTimeout(resolve, 260));
@@ -94,7 +88,7 @@ function notify(message, kind = 'info') {
   const stack = $('#toast-stack');
   const toast = document.createElement('div');
   toast.className = `toast toast-${kind}`;
-  toast.innerHTML = `<span class="toast-icon">${kind === 'danger' ? '!' : kind === 'good' ? '✓' : '✳'}</span><span>${escapeHtml(message)}</span>`;
+  toast.innerHTML = `<span class="toast-icon">${kind === 'danger' ? '!' : kind === 'good' ? '✓' : 'i'}</span><span>${escapeHtml(message)}</span>`;
   stack.appendChild(toast);
   requestAnimationFrame(() => toast.classList.add('visible'));
   setTimeout(() => {
@@ -115,7 +109,7 @@ function recordNewEvents() {
     else if (event.type === 'staff' && (event.message.includes('served '))) notify(event.message, 'good');
     else if (event.type === 'review') {
       const rating = Number(event.message.match(/(\d)-star/)?.[1] ?? 3);
-      notify(`New neighborhood review · ${rating} stars`, rating <= 2 ? 'danger' : rating === 5 ? 'good' : 'info');
+      notify(`New review · ${rating} stars`, rating <= 2 ? 'danger' : rating === 5 ? 'good' : 'info');
       renderReviewFeed();
       if (currentTab === 'reviews') renderPanel({ preserveScroll: true });
     }
@@ -130,42 +124,38 @@ function updateHeader() {
   $('#revenue-value').textContent = money(state.dayStats.revenue);
   $('#rep-value').textContent = Math.round(state.reputation);
   $('#rep-meter').style.width = `${state.reputation}%`;
-  $('#day-label').textContent = `DAY ${String(state.day).padStart(2, '0')}`;
+  $('#day-label').textContent = `Day ${state.day}`;
   $('#clock-value').textContent = fmtClock(state.minute);
-  const status = !state.started ? 'SHUTTERS DOWN' : state.dayEnded ? 'CLOSED FOR THE DAY' : state.paused ? 'PAUSED' : 'SHUTTERS UP';
+  const status = !state.started ? 'Closed' : state.dayEnded ? 'Closed for the day' : state.paused ? 'Paused' : 'Open';
   $('#shop-status').textContent = status;
   $('#open-pill').classList.toggle('is-open', state.started && !state.dayEnded);
-  $('#open-pill').querySelector('span').textContent = state.dayEnded ? 'CLOSED' : state.paused ? (state.started ? 'PAUSED' : 'CLOSED') : 'OPEN';
+  $('#open-pill').querySelector('span').textContent = state.dayEnded ? 'Closed' : state.paused ? (state.started ? 'Paused' : 'Closed') : 'Open';
   $('#pause-toggle').textContent = state.paused ? '▶' : 'Ⅱ';
-  $('#pause-toggle').title = state.paused ? 'Resume simulation' : 'Pause simulation';
-  $('#foot-customers').textContent = `${state.customers.length} DINERS IN THE CAFE`;
-  $('#foot-traffic').textContent = `BREAKFAST TRAFFIC ${trafficLabel(state)}`;
+  $('#pause-toggle').title = state.paused ? 'Resume' : 'Pause';
+  $('#foot-customers').textContent = `${state.customers.length} ${state.customers.length === 1 ? 'diner' : 'diners'}`;
+  $('#foot-traffic').textContent = `Traffic ${trafficLabel(state).toLowerCase()}`;
   const waiterTask = state.waiterWork ?? { stage: 'idle' };
   const waitingTables = state.customers.filter((customer) => customer.serviceStatus !== 'served').length;
-  const waiterLabel = waiterTask.stage === 'taking-order' ? 'WAITER TAKING AN ORDER'
-    : waiterTask.stage === 'preparing-order' ? 'KITCHEN PREPARING A MEAL'
-      : ['walking-to-delivery', 'presenting'].includes(waiterTask.stage) ? 'WAITER DELIVERING BREAKFAST'
-        : ['walking-to-table', 'returning-to-kitchen'].includes(waiterTask.stage) ? 'WAITER ON THE FLOOR' : null;
-  $('#foot-staff').textContent = waiterLabel ?? (waitingTables ? `${waitingTables} ORDERS IN SERVICE` : `${STAFF.length} CAFE CREW ON SHIFT`);
+  const waiterLabel = waiterTask.stage === 'taking-order' ? 'Waiter taking an order'
+    : waiterTask.stage === 'preparing-order' ? 'Kitchen cooking'
+      : ['walking-to-delivery', 'presenting'].includes(waiterTask.stage) ? 'Waiter serving'
+        : ['walking-to-table', 'returning-to-kitchen'].includes(waiterTask.stage) ? 'Waiter on the floor' : null;
+  $('#foot-staff').textContent = waiterLabel ?? (waitingTables ? `${waitingTables} ${waitingTables === 1 ? 'order' : 'orders'} in service` : `${STAFF.length} crew on shift`);
   const health = pantryHealth(state);
   const alertCount = health.expired ? health.empty + health.low + 1 : health.empty + health.low;
   const expiredUnits = health.expired;
   $('#shelf-alert-count').textContent = alertCount;
   $('#shelf-alert-count').classList.toggle('hidden', alertCount === 0);
-  $('#bottom-message').textContent = state.dayStats.complaints
-    ? `${state.dayStats.complaints} unhappy customer${state.dayStats.complaints === 1 ? '' : 's'} today. Check the dates.`
-    : expiredUnits ? `${expiredUnits} expired portions need to come out of the walk-in.`
-      : 'Fresh breakfast. Good coffee. Good people.';
   $('#start-overlay').classList.toggle('hidden', state.started);
   $('#player-controls')?.classList.toggle('hidden', !state.started || state.paused || state.dayEnded || state.gameOver);
   $('#pause-toggle').disabled = !state.started || state.dayEnded;
-  $('#sound-toggle').textContent = audioMuted ? '♫̸' : '♫';
+  $('#sound-toggle').textContent = audioMuted ? '♪̸' : '♪';
   $('#sound-toggle').classList.toggle('muted', audioMuted);
   document.querySelectorAll('[data-speed]').forEach((button) => button.classList.toggle('active', Number(button.dataset.speed) === state.speed));
 }
 
 function eventIcon(type) {
-  return ({ sale: '↗', customer: '♙', danger: '!', warning: '△', order: '▣', stock: '↔', staff: '↻', level: '↑', waste: '×', finance: '$', close: '▣', good: '✓', note: '✳', review: '★', })[type] ?? '·';
+  return ({ sale: '+', customer: '•', danger: '!', warning: '!', order: '•', stock: '•', staff: '•', level: '↑', waste: '×', finance: '$', close: '•', good: '✓', note: '•', review: '★' })[type] ?? '•';
 }
 function renderActivity(limit = 6) {
   return `<div class="activity-list">${state.events.slice(0, limit).map((event) => `
@@ -194,11 +184,11 @@ function reviewMarkup() {
   return `
     <div class="review-reputation">
       <div class="review-scoreline"><strong>${summary.rating.toFixed(1)}</strong><span class="review-stars">${'★'.repeat(Math.round(summary.rating))}<i>${'☆'.repeat(5 - Math.round(summary.rating))}</i></span></div>
-      <div class="review-score-copy"><b>${summary.count} cafe reviews</b><span>${Math.round(state.reputation)} / 100 neighborhood trust</span></div>
+      <div class="review-score-copy"><b>${summary.count} cafe reviews</b><span>${Math.round(state.reputation)} / 100 reputation</span></div>
       <div class="rating-distribution">${distribution.map((row) => `<div class="rating-bar"><span>${row.rating}</span><i><b style="width:${row.count / total * 100}%"></b></i><small>${row.count}</small></div>`).join('')}</div>
     </div>
-    <div class="review-footfall"><span><i class="live-dot"></i> ESTIMATED DINER TRAFFIC</span><strong class="traffic-${trafficLabel(state).toLowerCase()}">${trafficLabel(state)}</strong><small>${state.reputation >= 86 ? 'The block is talking you up.' : state.reputation >= 68 ? 'Regular neighborhood traffic.' : state.reputation >= 45 ? 'Fewer walk-ins than usual.' : 'Word of mouth is keeping people away.'}</small></div>
-    <div class="review-feed-heading"><span>RECENT DINER REVIEWS</span><small>NEWEST FIRST</small></div>
+    <div class="review-footfall"><span><i class="live-dot"></i> Foot traffic</span><strong class="traffic-${trafficLabel(state).toLowerCase()}">${trafficLabel(state)}</strong><small>${state.reputation >= 86 ? 'Guests are recommending the cafe.' : state.reputation >= 68 ? 'A normal number of walk-ins.' : state.reputation >= 45 ? 'Fewer walk-ins than usual.' : 'Word of mouth is keeping people away.'}</small></div>
+    <div class="review-feed-heading"><span>Recent reviews</span><small>Newest first</small></div>
     <div class="review-stream">${reviews.map((review) => {
       const initials = review.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
       const isNew = recent && review.id === recent.id && review.id > previousReviewSequence;
@@ -213,7 +203,7 @@ function reviewMarkup() {
         ${Number.isFinite(review.foodQuality) && Number.isFinite(review.serviceQuality) ? `<div class="review-quality"><span>FOOD <b>${review.foodQuality}/100</b></span><span>SERVICE <b>${review.serviceQuality}/100</b></span></div>` : ''}
         ${review.outcome === 'food-poor' ? '<div class="review-response-note">Kitchen quality was the main issue on this visit.</div>' : review.outcome === 'service-poor' ? '<div class="review-response-note">Table service was the main issue on this visit.</div>' : ''}
       </article>`;
-    }).join('') || '<div class="empty-state compact">No reviews yet. Serve a few breakfasts and see what the neighborhood thinks.</div>'}</div>
+    }).join('') || '<div class="empty-state compact">No reviews yet. They appear after guests are served.</div>'}</div>
   `;
 }
 
@@ -269,7 +259,7 @@ function overviewPanel() {
   const grossMargin = state.dayStats.revenue > 0 ? Math.round((state.dayStats.grossProfit / state.dayStats.revenue) * 100) : 0;
   return `
     <div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">THE DAILY CAFE REPORT</div><h3>Today's service</h3></div><span class="subtle">DAY ${state.day}</span></div>
+      <div class="section-heading"><div><div class="eyebrow">Today</div><h3>Today's service</h3></div><span class="subtle">DAY ${state.day}</span></div>
       <div class="metric-grid">
         <div class="metric-card"><span>SALES</span><strong>${money(state.dayStats.revenue)}</strong><small>${served} meals served · ${grossMargin}% gross margin</small></div>
         <div class="metric-card"><span>DINER COVERS</span><strong>${state.dayStats.customers}</strong><small>${active} currently in the dining room</small></div>
@@ -284,11 +274,11 @@ function overviewPanel() {
       ${urgent.length ? `<div class="attention-list">${urgent.map((ingredient) => {
         const expired = expiredQuantity(state, ingredient.id);
         return `<button class="attention-row" data-action="select-ingredient" data-ingredient="${ingredient.id}"><span class="attention-mark ${expired ? 'mark-danger' : 'mark-warning'}">${expired ? '!' : '◷'}</span><span><strong>${escapeHtml(ingredient.short)}</strong><small>${expired ? `${expired} expired portions` : `${pantryQuantity(state, ingredient.id)} portions left`}</small></span><span class="attention-go">›</span></button>`;
-      }).join('')}</div>` : '<div class="empty-state compact"><span class="empty-mark">✓</span><strong>The walk-in is in good shape.</strong><p>Keep rotating the oldest fresh ingredients first.</p></div>'}
+      }).join('')}</div>` : '<div class="empty-state compact"><strong>The walk-in is in good shape.</strong><p>Keep rotating the oldest fresh ingredients first.</p></div>'}
       <div class="action-pair"><button class="secondary-button" data-action="pull-expired">PULL EXPIRED</button><button class="secondary-button" data-action="reorder-low">REORDER LOW STOCK</button></div>
     </div>
     <div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">THE BLOCK IS TALKING</div><h3>Latest activity</h3></div><span class="subtle">LIVE</span></div>
+      <div class="section-heading"><div><div class="eyebrow">Live</div><h3>Latest activity</h3></div><span class="subtle">LIVE</span></div>
       ${renderActivity(5)}
     </div>`;
 }
@@ -316,7 +306,7 @@ function menuPanel() {
         </article>`;
       }).join('')}</div>
     </div>`;
-  }).join('') + '<div class="panel-section supplier-tip"><span class="tip-mark">✳</span><span><strong>PRICE WITH CARE.</strong><small>Regulars forgive a little. Past what a guest thinks a dish is worth, they pay, call the cafe pricey, and tell the block.</small></span></div>';
+  }).join('') + '<div class="panel-section supplier-tip"><span><strong>Pricing.</strong><small>Regulars forgive a little. Past what a guest thinks a dish is worth, they pay, call the cafe pricey, and tell their neighbors.</small></span></div>';
 }
 
 function ingredientPanel() {
@@ -350,10 +340,10 @@ function ingredientPanel() {
       <div class="fifo-heading"><span>USE-BY DATE ROTATION</span><span>OLDEST COOKED FIRST</span></div>
       <div class="batch-list">${lots.slice(0, 5).map((lot, index) => {
         const left = lot.expiresAt - productNow(state);
-        return `<div class="batch-row"><span class="batch-position ${index === 0 ? 'front' : ''}">${String(index + 1).padStart(2, '0')}</span><span class="batch-label"><strong>${index === 0 ? 'NEXT IN THE PAN' : 'BEHIND IT'}</strong><small>${lot.qty} portions · ${left <= 0 ? 'expired' : `${Math.max(1, Math.ceil(left))} days left`}</small></span><span class="tag tag-${expiryTone(lot)}">${left <= 0 ? 'EXPIRED' : left < 2 ? 'SOON' : 'FRESH'}</span></div>`;
+        return `<div class="batch-row"><span class="batch-position ${index === 0 ? 'front' : ''}">${String(index + 1).padStart(2, '0')}</span><span class="batch-label"><strong>${index === 0 ? 'Next in the pan' : 'Behind it'}</strong><small>${lot.qty} portions · ${left <= 0 ? 'expired' : `${Math.max(1, Math.ceil(left))} days left`}</small></span><span class="tag tag-${expiryTone(lot)}">${left <= 0 ? 'EXPIRED' : left < 2 ? 'SOON' : 'FRESH'}</span></div>`;
       }).join('') || '<div class="empty-state compact">None in the walk-in. Place a supplier order.</div>'}</div>
       <div class="price-editor"><div><span>SUPPLIER COST</span><strong>${money(ingredient.cost)} / PORTION</strong><small>Case of ${ingredient.caseSize} · ${money(ingredient.cost * ingredient.caseSize)} · used in ${escapeHtml(usedIn.join(', '))}</small></div></div>
-      <div class="action-pair"><button class="primary-button" data-action="place-order" data-ingredient="${selectedIngredient}">ORDER A CASE ↗</button><button class="secondary-button ${totalExpired ? 'danger-button' : ''}" data-action="pull-ingredient-expired" data-ingredient="${selectedIngredient}">PULL EXPIRED</button></div>
+      <div class="action-pair"><button class="primary-button" data-action="place-order" data-ingredient="${selectedIngredient}">Order a case</button><button class="secondary-button ${totalExpired ? 'danger-button' : ''}" data-action="pull-ingredient-expired" data-ingredient="${selectedIngredient}">PULL EXPIRED</button></div>
     </div>`;
 }
 
@@ -389,7 +379,7 @@ function diningPanel() {
       <div class="order-category"><div class="order-category-title">TABLES<span>${CAFE_TABLES.length} AREAS</span></div>${tableRows}</div>
       <div class="order-category"><div class="order-category-title">BOOTHS<span>${CAFE_BOOTHS.length} AREAS</span></div>${boothRows}</div>
     </div>
-    <div class="panel-section supplier-tip"><span class="tip-mark">✳</span><span><strong>THE SERVICE SEQUENCE.</strong><small>Guests are seated first. The waiter takes the order, Bob prepares the meal, and the waiter brings it to the table.</small></span></div>`;
+    <div class="panel-section supplier-tip"><span><strong>How service works.</strong><small>Guests are seated first. The waiter takes the order, Bob prepares the meal, and the waiter brings it to the table.</small></span></div>`;
 }
 
 function ordersPanel() {
@@ -410,13 +400,13 @@ function ordersPanel() {
   }).join('');
   return `
     <div class="panel-section order-intro">
-      <div class="section-heading"><div><div class="eyebrow">WHOLESALE DEPOT</div><h3>Place an order</h3></div><span class="tag tag-muted">SAME-DAY DROP</span></div>
+      <div class="section-heading"><div><div class="eyebrow">Supplier</div><h3>Place an order</h3></div><span class="tag tag-muted">SAME-DAY DROP</span></div>
       <p class="product-description">Cases go straight into the walk-in. The kitchen always cooks from the shortest-dated lot first.</p>
       <div class="supplier-credit"><span>AVAILABLE CASH</span><strong>${money(state.cash)}</strong><small>Credit is separate. Draw it on the Books tab before ordering.</small></div>
     </div>
     <div class="order-catalog">${grouped}</div>
     ${locked.length ? `<div class="panel-section"><div class="section-heading"><div><div class="eyebrow">NOT YET ON THE MENU</div><h3>Opens with new dishes</h3></div></div><div class="locked-list">${locked.map((ingredient) => `<span><b>${escapeHtml(ingredient.short)}</b> · cafe level ${ingredient.level}</span>`).join('')}</div></div>` : ''}
-    <div class="panel-section supplier-tip"><span class="tip-mark">✳</span><span><strong>BUY TO THE CLOCK.</strong><small>Milk, bread and tomatoes turn within days. Eggs, butter and coffee keep far longer.</small></span></div>`;
+    <div class="panel-section supplier-tip"><span><strong>Watch the dates.</strong><small>Milk, bread and tomatoes turn within days. Eggs, butter and coffee keep far longer.</small></span></div>`;
 }
 
 function financePanel() {
@@ -425,7 +415,7 @@ function financePanel() {
   const interest = state.debt * state.creditRate;
   return `
     <div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">WORKING CAPITAL</div><h3>Books & borrowing</h3></div><span class="tag ${state.debt ? 'tag-warning' : 'tag-good'}">${state.debt ? 'CREDIT ACTIVE' : 'DEBT FREE'}</span></div>
+      <div class="section-heading"><div><div class="eyebrow">Money</div><h3>Books & borrowing</h3></div><span class="tag ${state.debt ? 'tag-warning' : 'tag-good'}">${state.debt ? 'CREDIT ACTIVE' : 'DEBT FREE'}</span></div>
       <div class="finance-card"><div class="finance-card-top"><span>OUTSTANDING BALANCE</span><strong>${money(state.debt)}</strong></div><div class="debt-meter"><i style="width:${debtRatio}%"></i></div><div class="finance-card-foot"><span>${money(available)} available</span><span>${money(state.creditLimit)} limit</span></div></div>
       <div class="loan-terms"><div><span>DAILY INTEREST</span><strong>1.25%</strong></div><div><span>INTEREST AT CURRENT BALANCE</span><strong>${money(interest)} / day</strong></div><div><span>PAYMENT DUE</span><strong>End of each day</strong></div></div>
     </div>
@@ -436,13 +426,13 @@ function financePanel() {
       <div class="quick-amounts">${[100, 250, 500].map((amount) => `<button class="secondary-button" data-action="borrow" data-amount="${amount}" ${available < amount ? 'disabled' : ''}>+${money(amount)}</button>`).join('')}</div>
     </div>
     <div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">PAY IT BACK</div><h3>Repayment</h3></div></div>
+      <div class="section-heading"><div><div class="eyebrow">Credit</div><h3>Repayment</h3></div></div>
       <div class="repay-card"><div><strong>${money(state.debt)}</strong><small>Current principal + interest</small></div><button class="primary-button" data-action="repay-all" ${state.debt <= 0 || state.cash <= 0 ? 'disabled' : ''}>PAY IN FULL</button></div>
       <div class="quick-amounts">${[100, 250, 500].map((amount) => `<button class="secondary-button" data-action="repay" data-amount="${amount}" ${state.debt <= 0 || state.cash <= 0 ? 'disabled' : ''}>PAY ${money(amount)}</button>`).join('')}</div>
       <div class="fine-print">Repayments are taken from the register immediately. You cannot repay more cash than you have.</div>
     </div>
     <div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">THE COST OF OPENING</div><h3>Daily overhead</h3></div></div>
+      <div class="section-heading"><div><div class="eyebrow">Running costs</div><h3>Daily overhead</h3></div></div>
       <div class="cost-list"><div><span>Rent</span><b>${money(state.dailyCosts.rent)}</b></div><div><span>Payroll · ${STAFF.length} staff</span><b>${money(state.dailyCosts.payroll)}</b></div><div><span>Utilities & refrigeration</span><b>${money(state.dailyCosts.utilities)}</b></div><div><span>Interest (added to balance)</span><b>${money(interest)}</b></div><div class="cost-total"><span>Expected daily overhead</span><b>${money(state.dailyCosts.rent + state.dailyCosts.payroll + state.dailyCosts.utilities + interest)}</b></div></div>
     </div>`;
 }
@@ -454,7 +444,7 @@ function staffPanel() {
   return `
     <div class="panel-section">
       <div class="section-heading"><div><div class="eyebrow">YOUR CREW</div><h3>People of the cafe</h3></div><span class="tag tag-good">${STAFF.length} ON SHIFT</span></div>
-      <p class="product-description">Good people make a good cafe. Your crew is on the clock whenever the shutters are up.</p>
+      <p class="product-description">Your crew is paid for the full day, whenever the cafe is open.</p>
       <div class="staff-task-card">
         <div class="staff-task-heading"><strong>TABLE SERVICE</strong><span>${waiterStatus}</span></div>
         <p>The waiter takes each order, Bob prepares the meal, and the waiter brings it to the table.</p>
@@ -490,15 +480,14 @@ function renderDaySummary() {
   const isOver = summary.net < 0;
   modal.innerHTML = `
     <div class="summary-card">
-      <div class="summary-eyebrow">THE BOOKS ARE CLOSED · DAY ${summary.day}</div>
-      <div class="summary-icon">${state.gameOver ? '×' : '✳'}</div>
-      <h2>${state.gameOver ? 'The shutters stay down.' : 'Another day on the block.'}</h2>
-      <p>${state.gameOver ? 'Cafe finances or neighborhood reputation ran out of runway. The doors have closed.' : 'Count the till, check the walk-in, and get ready for tomorrow.'}</p>
+      <div class="summary-eyebrow">Day ${summary.day} closed</div>
+      <h2>${state.gameOver ? 'The cafe has closed for good.' : 'Day done.'}</h2>
+      <p>${state.gameOver ? 'The cafe ran out of money or reputation.' : 'Count the till, check the walk-in, and get ready for tomorrow.'}</p>
       <div class="summary-metrics"><div><span>SALES</span><b>${money(summary.revenue)}</b></div><div><span>GROSS PROFIT</span><b>${money(summary.grossProfit)}</b></div><div><span>DINERS</span><b>${summary.customers}</b></div><div><span>FOOD / SERVICE</span><b>${summary.averageFoodQuality ?? 0} / ${summary.averageServiceQuality ?? 0}</b></div></div>
       <div class="summary-costs"><div><span>Rent</span><b>${money(summary.expenses.rent)}</b></div><div><span>Payroll</span><b>${money(summary.expenses.payroll)}</b></div><div><span>Utilities</span><b>${money(summary.expenses.utilities)}</b></div><div><span>Credit interest</span><b>${money(summary.expenses.interest)}</b></div><div><span>Inventory purchased</span><b>${money(summary.purchases)}</b></div><div><span>Expired stock written off</span><b>${money(summary.waste)}</b></div></div>
-      <div class="summary-net ${isOver ? 'negative' : 'positive'}"><span>TRADING RESULT AFTER OVERHEAD</span><strong>${summary.net >= 0 ? '+' : '−'}${money(Math.abs(summary.net))}</strong></div>
+      <div class="summary-net ${isOver ? 'negative' : 'positive'}"><span>Result after running costs</span><strong>${summary.net >= 0 ? '+' : '−'}${money(Math.abs(summary.net))}</strong></div>
       <div class="summary-balance"><span>REGISTER ${money(summary.cash)}</span><span>CREDIT ${money(summary.debt)}</span></div>
-      ${state.gameOver ? '<button class="primary-button summary-next" data-action="restart">TRY A NEW CAFE ↗</button>' : '<button class="primary-button summary-next" data-action="next-day">OPEN TOMORROW ↗</button>'}
+      ${state.gameOver ? '<button class="primary-button summary-next" data-action="restart">Start a new cafe</button>' : '<button class="primary-button summary-next" data-action="next-day">Open tomorrow</button>'}
     </div>`;
 }
 
@@ -578,7 +567,7 @@ document.addEventListener('click', (event) => {
   if (action === 'next-day') {
     startNextDay(state);
     $('#day-summary').classList.add('hidden');
-    notify(`Day ${state.day} is open. Make it count.`, 'good');
+    notify(`Day ${state.day} is open.`, 'good');
   }
   if (action === 'restart') {
     window.location.reload();
@@ -608,7 +597,7 @@ $('#open-store').addEventListener('click', () => {
   beginDay(state);
   world.setOpen(true);
   refresh();
-  notify('The shutters are up. Here comes the neighborhood.', 'good');
+  notify('The cafe is open.', 'good');
 });
 
 $('#pause-toggle').addEventListener('click', () => {
@@ -616,16 +605,16 @@ $('#pause-toggle').addEventListener('click', () => {
   updateHeader();
 });
 
-const WALL_LABEL = { auto: 'AUTO', solid: 'SOLID', ghost: 'GHOST' };
+const WALL_LABEL = { auto: 'Auto', solid: 'Solid', ghost: 'See-through' };
 $('#wall-toggle').addEventListener('click', () => {
-  $('#wall-toggle').textContent = `WALLS · ${WALL_LABEL[world.cycleWallMode()]}`;
+  $('#wall-toggle').textContent = `Walls: ${WALL_LABEL[world.cycleWallMode()]}`;
 });
 
 $('#sound-toggle').addEventListener('click', () => {
   audioMuted = !audioMuted;
   audio.setMuted(audioMuted);
   if (!audioMuted) audio.wake();
-  $('#sound-toggle').textContent = audioMuted ? '♫̸' : '♫';
+  $('#sound-toggle').textContent = audioMuted ? '♪̸' : '♪';
   $('#sound-toggle').classList.toggle('muted', audioMuted);
 });
 

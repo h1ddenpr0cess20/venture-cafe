@@ -11,10 +11,7 @@
     "test": "node --test"
   },
   "dependencies": {
-    "madness-engine": "github:h1ddenpr0cess20/madness-engine#57ee61700a6ff96dad0e10714a5385a3fd662e95",
-    "@fontsource/caveat": "^5.3.0",
-    "@fontsource/oswald": "^5.3.0",
-    "@fontsource/playfair-display": "^5.3.0"
+    "madness-engine": "github:h1ddenpr0cess20/madness-engine#57ee61700a6ff96dad0e10714a5385a3fd662e95"
   },
   "devDependencies": {
     "vite": "^7.1.0"
