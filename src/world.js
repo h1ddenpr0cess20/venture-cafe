@@ -726,6 +726,8 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
 
   const world = {
     stage, scene, staffModels, player, update, wallGroups,
+    /** Where a guest is standing, for tools and tests. */
+    guestPosition(id) { const actor = customerActors.get(id); return actor ? { x: actor.model.group.position.x, z: actor.model.group.position.z } : null; },
     /** Who the owner is standing near enough to talk to: { kind: 'guest' | 'staff', id } or null. */
     get nearby() { return nearby ? { kind: nearby.kind, id: nearby.id } : null; },
     /** The owner turns to someone and they talk for a few seconds. */

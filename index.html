@@ -25,12 +25,13 @@
         </div>
       </header>
 
-      <main class="workspace">
+      <main class="workspace" id="workspace">
         <section class="scene-column">
           <div class="scene-topline">
             <div class="scene-location"><span class="live-dot"></span><span id="shop-status">Closed</span></div>
             <div class="scene-tools">
               <span class="scene-hint">Middle-drag to look · WASD to walk · walk up to someone to talk</span>
+              <button class="wall-button" id="panel-toggle" type="button" title="Hide or show the cafe office (O)" aria-expanded="true">Hide office</button>
               <button class="wall-button" id="wall-toggle" type="button" title="Walls between the camera and the cafe fade away (Auto), stay solid, or are always see-through">Walls: Auto</button>
               <div class="speed-control" aria-label="Speed">
                 <button data-speed="1" class="speed-button active">1×</button>
@@ -77,7 +78,7 @@
         <aside class="ops-panel">
           <div class="ops-heading">
             <h2>Cafe office</h2>
-            <div class="open-pill" id="open-pill"><i></i><span>Closed</span></div>
+            <div class="ops-heading-tools"><div class="open-pill" id="open-pill"><i></i><span>Closed</span></div><button class="icon-button" id="panel-close" type="button" title="Hide the office (O)" aria-label="Hide the office">›</button></div>
           </div>
           <nav class="tabs" aria-label="Cafe management">
             <button class="tab active" data-tab="overview">Overview</button>

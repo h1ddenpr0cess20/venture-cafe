@@ -654,6 +654,26 @@ window.addEventListener('keydown', (event) => {
   if (option) { option.click(); event.preventDefault(); }
 });
 
+/** The office panel can be hidden so the scene has the whole window. */
+const PANEL_KEY = 'venture-cafe.office-hidden';
+function setPanelHidden(hidden) {
+  $('#workspace').classList.toggle('panel-collapsed', hidden);
+  $('#panel-toggle').textContent = hidden ? 'Show office' : 'Hide office';
+  $('#panel-toggle').setAttribute('aria-expanded', String(!hidden));
+  try { window.localStorage.setItem(PANEL_KEY, hidden ? '1' : '0'); } catch { /* Storage can be unavailable. */ }
+  window.dispatchEvent(new Event('resize'));                 // the scene refits to the room it now has
+}
+const togglePanel = () => setPanelHidden(!$('#workspace').classList.contains('panel-collapsed'));
+$('#panel-toggle').addEventListener('click', togglePanel);
+$('#panel-close').addEventListener('click', togglePanel);
+window.addEventListener('keydown', (event) => {
+  if (event.key.toLowerCase() !== 'o' || event.ctrlKey || event.metaKey || event.altKey) return;
+  const focused = document.activeElement;
+  if (focused && (focused.tagName === 'INPUT' || focused.tagName === 'TEXTAREA' || focused.isContentEditable)) return;
+  togglePanel();
+});
+try { if (window.localStorage.getItem(PANEL_KEY) === '1') setPanelHidden(true); } catch { /* Start with the office showing. */ }
+
 $('#open-store').addEventListener('click', () => {
   withAudioWake();
   beginDay(state);

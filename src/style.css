@@ -351,3 +351,11 @@ strong, b { font-weight: 600; }
 .staff-morale small { color: var(--muted); font-size: 12px; }
 .review-owner-note { margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--good); font-size: 12px; }
 @media (max-width: 960px) { .interact-card { bottom: 44px; } }
+
+/* ——— the office panel can be tucked away to give the scene the whole window ——— */
+.ops-heading-tools { display: flex; align-items: center; gap: 8px; }
+.workspace.panel-collapsed { grid-template-columns: minmax(0, 1fr) 0; }
+.workspace.panel-collapsed .ops-panel { display: none; }
+@media (max-width: 960px) {
+  .workspace.panel-collapsed { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 0; }
+}
