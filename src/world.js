@@ -512,7 +512,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
         } else {
           actor.seatedAt = null;
         }
-        actor.model.pose({ clip, t, time: actor.time, seed: customer.id });
+        actor.model.pose({ clip, t, time: actor.time, seed: customer.id, speaking: isSpeaking(`guest:${customer.id}`) });
         actor.poseClip = clip;
         actor.poseAccumulator %= 0.05;
       }
@@ -528,7 +528,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
       worker.poseAccumulator += dt;
       if (worker.poseAccumulator >= 0.05) {
         const preparing = worker.name === 'Bob' && state.waiterWork?.stage === 'preparing-order';
-        worker.model.pose({ clip: preparing ? 'talk' : 'idle', t: worker.time, time: worker.time, seed: worker.name.length });
+        worker.model.pose({ clip: preparing ? 'talk' : 'idle', t: worker.time, time: worker.time, seed: worker.name.length, speaking: isSpeaking(staffKeys[STAFF.findIndex((person) => person.name === worker.name)]) });
         worker.poseAccumulator %= 0.05;
       }
       worker.model.group.position.set(...worker.home);
@@ -575,9 +575,36 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     actor.time += dt;
     actor.poseAccumulator += dt;
     if (actor.poseAccumulator >= 0.05) {
-      actor.model.pose({ clip: moving ? 'walk' : 'idle', t: actor.time, time: actor.time, seed: actor.name.length });
+      actor.model.pose({ clip: moving ? 'walk' : 'idle', t: actor.time, time: actor.time, seed: actor.name.length, speaking: isSpeaking('staff:waiter') });
       actor.poseAccumulator %= 0.05;
     }
+  }
+
+  // ——— talking: who the owner can speak to, and who is speaking right now ———
+  const TALK_RANGE = 1.9;
+  const speaking = { key: null, until: 0 };
+  const nowSeconds = () => performance.now() / 1000;
+  let ownerSpeaksUntil = 0;
+  const isSpeaking = (key) => (key === 'owner' ? nowSeconds() < ownerSpeaksUntil : speaking.key === key && nowSeconds() < speaking.until);
+  const staffKeys = STAFF.map((person) => `staff:${person.id}`);
+  let nearby = null;
+  const talkRing = new GFX.Mesh(new GFX.TorusGeometry(0.4, 0.022, 8, 40), new GFX.MeshBasicMaterial({ color: '#f2c14e', transparent: true, opacity: 0.9, depthTest: false }));
+  talkRing.rotation.x = Math.PI / 2; talkRing.renderOrder = 20; talkRing.visible = false; scene.add(talkRing);
+
+  /** The nearest guest or crew member within reach of the owner, or null. Guests count once they are seated or paying. */
+  function findNearby(state) {
+    let best = null;
+    const consider = (kind, id, group, extra = {}) => {
+      const distance = Math.hypot(group.position.x - player.x, group.position.z - player.z);
+      if (distance <= TALK_RANGE && (!best || distance < best.distance)) best = { kind, id, distance, x: group.position.x, z: group.position.z, ...extra };
+    };
+    for (const customer of state.customers) {
+      const actor = customerActors.get(customer.id);
+      const here = customer.phase === 'browsing' ? (customer.arrivalTimer ?? 0) <= 0 : customer.phase === 'checkout';
+      if (actor && here) consider('guest', customer.id, actor.model.group);
+    }
+    staffModels.forEach((worker, index) => consider('staff', STAFF[index].id, worker.model.group));
+    return best;
   }
 
   function updatePlayer(state, dt) {
@@ -599,7 +626,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     player.time += dt;
     player.poseAccumulator += dt;
     if (player.poseAccumulator >= 0.04) {
-      playerModel.pose({ clip: moving ? 'walk' : 'idle', t: player.time, time: player.time, seed: 29, pace: playerKeys.has('run') ? 1.35 : 1 });
+      playerModel.pose({ clip: moving ? 'walk' : 'idle', t: player.time, time: player.time, seed: 29, pace: playerKeys.has('run') ? 1.35 : 1, speaking: isSpeaking('owner') });
       player.poseAccumulator %= 0.04;
     }
     ownerTag.position.set(player.x, player.floor + 1.72, player.z);
@@ -642,6 +669,9 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     updateStaff(state, actorDt);
     updateWaiter(state, actorDt * 1.65);
     updatePlayer(state, dt);
+    nearby = state.started && !state.paused && !state.dayEnded ? findNearby(state) : null;
+    talkRing.visible = !!nearby;
+    if (nearby) { talkRing.position.set(nearby.x, 0.05, nearby.z); talkRing.scale.setScalar(1 + Math.sin(realTime * 5) * 0.06); }
     updateDoor(dt);
     updateWalls(dt);
     stage.target.set(world.focus?.[0] ?? 0, 0.5, world.focus?.[1] ?? 0.8);
@@ -696,6 +726,17 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
 
   const world = {
     stage, scene, staffModels, player, update, wallGroups,
+    /** Who the owner is standing near enough to talk to: { kind: 'guest' | 'staff', id } or null. */
+    get nearby() { return nearby ? { kind: nearby.kind, id: nearby.id } : null; },
+    /** The owner turns to someone and they talk for a few seconds. */
+    speak(kind, id, seconds = 3) {
+      const key = kind === 'guest' ? `guest:${id}` : kind === 'staff' ? `staff:${id}` : 'owner';
+      const target = nearby && nearby.kind === kind && nearby.id === id ? nearby : null;
+      if (target) playerModel.group.rotation.y = Math.atan2(target.x - player.x, target.z - player.z);
+      speaking.key = key; speaking.until = nowSeconds() + seconds;
+      // The owner talks as well: the shared clock only holds one speaker, so the owner's mouth moves for the same moment.
+      ownerSpeaksUntil = nowSeconds() + seconds;
+    },
     get wallMode() { return wallMode; },
     setWallMode(mode) { if (WALL_MODES.includes(mode)) wallMode = mode; return wallMode; },
     cycleWallMode() { wallMode = WALL_MODES[(WALL_MODES.indexOf(wallMode) + 1) % WALL_MODES.length]; return wallMode; },

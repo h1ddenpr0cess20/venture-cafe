@@ -5,6 +5,7 @@ import {
   openIngredients, isOpen, getStoreLevel, getStoreLevelProgress, pantryQuantity, expiredQuantity, oldestLot, recipeCost,
   isExpired, qtyOf, pullExpired, adjustMenuPrice, placeOrder, borrowCredit, repayCredit, advanceGame, beginDay,
   togglePause, startNextDay, saveGameState, loadGameState, trafficLabel, reviewSummary, pantryHealth,
+  ownerActionsFor, staffActionsFor, talkToGuest, talkToStaff, guestMood, crewStatus,
 } from './sim.js';
 import { createVentureCafeWorld } from './world.js';
 import { CAFE_MENU } from './menu.js';
@@ -118,6 +119,38 @@ function recordNewEvents() {
   previousReviewSequence = Math.max(previousReviewSequence, state.reviewSequence);
 }
 
+/** The card that appears when the owner stands near a guest or a crew member: who they are, how they are, and what to say. */
+let cardKey = '';
+function updateInteractCard() {
+  const card = $('#interact-card');
+  if (!card) return;
+  const near = state.started && !state.paused && !state.dayEnded ? world.nearby : null;
+  let html = '', key = '';
+  const buttons = (kind, id, actions) => actions.length
+    ? `<div class="interact-actions">${actions.map((action, index) => `<button type="button" data-action="owner-talk" data-kind="${kind}" data-id="${id}" data-act="${action.id}"><kbd>${index + 1}</kbd><span>${escapeHtml(action.label)}<small>${escapeHtml(action.hint)}</small></span></button>`).join('')}</div>`
+    : '<p class="interact-none">Nothing to say right now.</p>';
+  if (near?.kind === 'guest') {
+    const guest = state.customers.find((customer) => customer.id === near.id);
+    if (guest) {
+      const actions = ownerActionsFor(state, guest), mood = guestMood(state, guest);
+      key = `g${guest.id}|${mood}|${actions.map((action) => action.id)}`;
+      html = `<div class="interact-head"><strong>${escapeHtml(guest.name)}</strong><span>${escapeHtml(guest.tag)}${guest.partySize > 1 ? ` · party of ${guest.partySize}` : ''}</span></div>
+        <div class="interact-mood">${escapeHtml(mood)}${guest.comped ? ' · on the house' : ''}</div>${buttons('guest', guest.id, actions)}`;
+    }
+  } else if (near?.kind === 'staff') {
+    const person = crewStatus(state).find((candidate) => candidate.id === near.id);
+    const actions = staffActionsFor(state, near.id);
+    key = `s${person.id}|${person.morale}|${actions.map((action) => action.id)}`;
+    html = `<div class="interact-head"><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(person.role)}</span></div>
+      <div class="interact-mood">${person.mood} · morale ${person.morale}</div>
+      <div class="debt-meter morale-meter"><i style="width:${person.morale}%"></i></div>${buttons('staff', person.id, actions)}`;
+  }
+  if (key === cardKey) return;
+  cardKey = key;
+  card.innerHTML = html;
+  card.classList.toggle('hidden', !html);
+}
+
 function updateHeader() {
   $('#cash-value').textContent = money(state.cash);
   $('#debt-value').textContent = money(state.debt);
@@ -155,7 +188,7 @@ function updateHeader() {
 }
 
 function eventIcon(type) {
-  return ({ sale: '+', customer: '•', danger: '!', warning: '!', order: '•', stock: '•', staff: '•', level: '↑', waste: '×', finance: '$', close: '•', good: '✓', note: '•', review: '★' })[type] ?? '•';
+  return ({ owner: '“', sale: '+', customer: '•', danger: '!', warning: '!', order: '•', stock: '•', staff: '•', level: '↑', waste: '×', finance: '$', close: '•', good: '✓', note: '•', review: '★' })[type] ?? '•';
 }
 function renderActivity(limit = 6) {
   return `<div class="activity-list">${state.events.slice(0, limit).map((event) => `
@@ -200,6 +233,7 @@ function reviewMarkup() {
         <div class="review-person"><span class="review-avatar">${escapeHtml(initials)}</span><span class="review-person-copy"><strong>${escapeHtml(review.name)}</strong><small>${escapeHtml(review.source)} · ${reviewTimestamp(review)}</small></span>${isNew ? '<em>JUST IN</em>' : ''}</div>
         <div class="review-card-stars"><span>${'★'.repeat(review.rating)}<i>${'☆'.repeat(5 - review.rating)}</i></span><small>${tag}</small></div>
         <p>${escapeHtml(review.text)}</p>
+        ${review.ownerVisited ? '<div class="review-owner-note">The owner stopped by their table.</div>' : ''}
         ${Number.isFinite(review.foodQuality) && Number.isFinite(review.serviceQuality) ? `<div class="review-quality"><span>FOOD <b>${review.foodQuality}/100</b></span><span>SERVICE <b>${review.serviceQuality}/100</b></span></div>` : ''}
         ${review.outcome === 'food-poor' ? '<div class="review-response-note">Kitchen quality was the main issue on this visit.</div>' : review.outcome === 'service-poor' ? '<div class="review-response-note">Table service was the main issue on this visit.</div>' : ''}
       </article>`;
@@ -440,21 +474,26 @@ function financePanel() {
 function staffPanel() {
   const initials = (person) => person.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
   const waiterStage = state.waiterWork?.stage ?? 'idle';
-  const waiterStatus = waiterStage === 'idle' ? 'ON STANDBY' : waiterStage === 'taking-order' ? 'TAKING AN ORDER' : waiterStage === 'preparing-order' ? 'WAITING ON THE KITCHEN' : ['walking-to-delivery', 'presenting'].includes(waiterStage) ? 'DELIVERING BREAKFAST' : 'ON THE FLOOR';
+  const waiterStatus = waiterStage === 'idle' ? 'On standby' : waiterStage === 'taking-order' ? 'Taking an order' : waiterStage === 'preparing-order' ? 'Waiting on the kitchen' : ['walking-to-delivery', 'presenting'].includes(waiterStage) ? 'Serving breakfast' : 'On the floor';
+  const crew = crewStatus(state);
+  const tone = (morale) => (morale >= 60 ? 'good' : morale >= 40 ? 'warning' : 'danger');
   return `
     <div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">YOUR CREW</div><h3>People of the cafe</h3></div><span class="tag tag-good">${STAFF.length} ON SHIFT</span></div>
-      <p class="product-description">Your crew is paid for the full day, whenever the cafe is open.</p>
+      <div class="section-heading"><div><div class="eyebrow">Your crew</div><h3>Morale and work</h3></div><span class="tag tag-good">${STAFF.length} on shift</span></div>
+      <p class="product-description">Walk up to someone and press a number to talk. Morale moves how well they work: a tired cook turns out worse plates, a worn-down host seats people slower. The work itself wears it down, and a good word, praise or a bonus brings it back.</p>
+      <div class="staff-list">${crew.map((person, index) => `<div class="staff-card staff-card-wide">
+        <div class="staff-avatar staff-avatar-${index}">${initials(person)}</div>
+        <div class="staff-copy"><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(person.role)}</span><small>${money(STAFF[index].wage)} / day</small></div>
+        <div class="staff-morale"><span class="tag tag-${tone(person.morale)}">${person.mood}</span><div class="debt-meter morale-meter"><i style="width:${person.morale}%"></i></div><small>Morale ${person.morale} · work quality ${person.quality}${person.quality !== person.baseQuality ? ` (usually ${person.baseQuality})` : ''}</small></div>
+      </div>`).join('')}</div>
       <div class="staff-task-card">
-        <div class="staff-task-heading"><strong>TABLE SERVICE</strong><span>${waiterStatus}</span></div>
-        <p>The waiter takes each order, Bob prepares the meal, and the waiter brings it to the table.</p>
-        <small>Guests are seated first · meals use ingredients from the walk-in</small>
+        <div class="staff-task-heading"><strong>Table service</strong><span>${waiterStatus}</span></div>
+        <p>The waiter takes each table's orders, Bob cooks them, and the waiter brings them out together.</p>
       </div>
-      <div class="staff-list">${STAFF.map((person, index) => `<div class="staff-card"><div class="staff-avatar staff-avatar-${index}">${initials(person)}</div><div class="staff-copy"><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(person.role)}</span><small>${money(person.wage)} / day · full shift</small></div><span class="staff-status">ON DUTY</span></div>`).join('')}</div>
     </div>
     <div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">HOUSEKEEPING</div><h3>Kitchen standards</h3></div></div>
-      <div class="standards-list"><div><span>✓</span> Rotate stock by expiry date, not delivery date.</div><div><span>✓</span> Keep milk, eggs and butter cold.</div><div><span>✓</span> Pull expired ingredients from the walk-in.</div><div><span>✓</span> Keep enough cash in the register before the next order.</div></div>
+      <div class="section-heading"><div><div class="eyebrow">Housekeeping</div><h3>Kitchen standards</h3></div></div>
+      <div class="standards-list"><div><span>✓</span> Rotate stock by expiry date, not delivery date.</div><div><span>✓</span> Keep milk, eggs and butter cold.</div><div><span>✓</span> Pull expired ingredients from the walk-in.</div><div><span>✓</span> Keep enough cash in the register for wages and bonuses.</div></div>
     </div>`;
 }
 
@@ -484,7 +523,7 @@ function renderDaySummary() {
       <h2>${state.gameOver ? 'The cafe has closed for good.' : 'Day done.'}</h2>
       <p>${state.gameOver ? 'The cafe ran out of money or reputation.' : 'Count the till, check the walk-in, and get ready for tomorrow.'}</p>
       <div class="summary-metrics"><div><span>SALES</span><b>${money(summary.revenue)}</b></div><div><span>GROSS PROFIT</span><b>${money(summary.grossProfit)}</b></div><div><span>DINERS</span><b>${summary.customers}</b></div><div><span>FOOD / SERVICE</span><b>${summary.averageFoodQuality ?? 0} / ${summary.averageServiceQuality ?? 0}</b></div></div>
-      <div class="summary-costs"><div><span>Rent</span><b>${money(summary.expenses.rent)}</b></div><div><span>Payroll</span><b>${money(summary.expenses.payroll)}</b></div><div><span>Utilities</span><b>${money(summary.expenses.utilities)}</b></div><div><span>Credit interest</span><b>${money(summary.expenses.interest)}</b></div><div><span>Inventory purchased</span><b>${money(summary.purchases)}</b></div><div><span>Expired stock written off</span><b>${money(summary.waste)}</b></div></div>
+      <div class="summary-costs"><div><span>Rent</span><b>${money(summary.expenses.rent)}</b></div><div><span>Payroll</span><b>${money(summary.expenses.payroll)}</b></div><div><span>Utilities</span><b>${money(summary.expenses.utilities)}</b></div>${summary.expenses.bonuses ? `<div><span>Bonuses</span><b>${money(summary.expenses.bonuses)}</b></div>` : ''}<div><span>Credit interest</span><b>${money(summary.expenses.interest)}</b></div><div><span>Inventory purchased</span><b>${money(summary.purchases)}</b></div><div><span>Expired stock written off</span><b>${money(summary.waste)}</b></div></div>
       <div class="summary-net ${isOver ? 'negative' : 'positive'}"><span>Result after running costs</span><strong>${summary.net >= 0 ? '+' : '−'}${money(Math.abs(summary.net))}</strong></div>
       <div class="summary-balance"><span>REGISTER ${money(summary.cash)}</span><span>CREDIT ${money(summary.debt)}</span></div>
       ${state.gameOver ? '<button class="primary-button summary-next" data-action="restart">Start a new cafe</button>' : '<button class="primary-button summary-next" data-action="next-day">Open tomorrow</button>'}
@@ -547,6 +586,20 @@ document.addEventListener('click', (event) => {
       state.orderCases[ingredientId] = 1;
     } else notify(result.reason === 'insufficient-funds' ? `Short ${money(result.shortfall)}. Use the credit line or choose fewer cases.` : 'That order could not be placed.', 'danger');
   }
+  if (action === 'owner-talk') {
+    const kind = button.dataset.kind, act = button.dataset.act;
+    const id = kind === 'guest' ? Number(button.dataset.id) : button.dataset.id;
+    const result = kind === 'guest' ? talkToGuest(state, id, act) : talkToStaff(state, id, act);
+    if (result.ok) {
+      const name = kind === 'guest' ? state.customers.find((customer) => customer.id === id)?.name : crewStatus(state).find((person) => person.id === id).name.split(' ')[0];
+      const extra = kind === 'staff' ? ` (morale ${result.gained >= 0 ? '+' : ''}${Math.round(result.gained)})` : result.detail ? ` ${result.detail}` : '';
+      notify(`${name}: “${result.reply}”${extra}`, 'good');
+      world.speak(kind, id);
+      if (!audioMuted) audio.tone({ freq: 520, to: 600, length: 0.08, gain: 0.05, type: 'triangle' });
+    } else notify('That does not suit them right now.', 'info');
+    cardKey = '';
+    updateInteractCard();
+  }
   if (action === 'borrow') {
     const result = borrowCredit(state, amount);
     notify(result.ok ? `${money(amount)} added to the register.` : `Only ${money(result.available || 0)} credit is available.`, result.ok ? 'good' : 'danger');
@@ -592,6 +645,15 @@ panel.addEventListener('input', (event) => {
   }
 });
 
+window.addEventListener('keydown', (event) => {
+  if (event.ctrlKey || event.metaKey || event.altKey || !/^[1-9]$/.test(event.key)) return;
+  const focused = document.activeElement;
+  if (focused && (focused.tagName === 'INPUT' || focused.tagName === 'TEXTAREA' || focused.isContentEditable)) return;
+  const options = document.querySelectorAll('#interact-card button[data-action="owner-talk"]');
+  const option = options[Number(event.key) - 1];
+  if (option) { option.click(); event.preventDefault(); }
+});
+
 $('#open-store').addEventListener('click', () => {
   withAudioWake();
   beginDay(state);
@@ -632,7 +694,7 @@ function frame(now) {
   realTime += dt;
   advanceGame(state, activeFrameDelta(state, dt) * 1.65);
   recordNewEvents();
-  if (now - lastHeaderRender > 160) { updateHeader(); lastHeaderRender = now; }
+  if (now - lastHeaderRender > 160) { updateHeader(); updateInteractCard(); lastHeaderRender = now; }
   if (now - lastPanelRender > 900) {
     if (currentTab === 'overview' || currentTab === 'staff' || currentTab === 'finance' || currentTab === 'orders' || currentTab === 'floor' || (currentTab === 'shelves' && !$('#stock-search')?.matches(':focus')) || currentTab === 'menu') renderPanel({ preserveScroll: true });
     renderDaySummary();

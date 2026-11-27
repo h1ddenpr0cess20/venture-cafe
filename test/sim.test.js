@@ -4,7 +4,7 @@ import {
   INGREDIENTS, INGREDIENT_BY_ID, createGameState, productNow, placeOrder, pullExpired, pantryQuantity, pantryHealth,
   borrowCredit, repayCredit, advanceGame, beginDay, startNextDay, adjustMenuPrice, saveGameState, loadGameState,
   maybeLeaveReview, customerArrivalInterval, trafficLabel, reviewSummary, openMenu, chooseDish, chooseResident,
-  RESIDENTS, STAFF, getStoreLevel, getStoreLevelProgress, activeFrameDelta, expiredQuantity, qtyOf, isOpen,
+  RESIDENTS, STAFF, ownerActionsFor, talkToGuest, guestMood, staffActionsFor, talkToStaff, crewStatus, staffQuality, getStoreLevel, getStoreLevelProgress, activeFrameDelta, expiredQuantity, qtyOf, isOpen,
 } from '../src/sim.js';
 import { CAFE_AREAS } from '../src/layout.js';
 import { CAFE_MENU, CAFE_MENU_BY_ID } from '../src/menu.js';
@@ -425,4 +425,167 @@ test('the pantry health report counts what needs the owner\'s attention', () => 
   const health = pantryHealth(state);
   assert.ok(health.empty >= 1 && health.low >= 1);
   assert.equal(INGREDIENTS.filter((i) => isOpen(state, i)).length > 0, true);
+});
+
+/** A guest who has been served, so the owner has the whole menu of things to do. */
+function servedGuest(state, extra = {}) {
+  return seatedGuest(state, { serviceStatus: 'served', orderedMenuId: 'scrambled-eggs', foodQuality: 90, serviceQuality: 90, servedAt: state.minute, ...extra });
+}
+
+test('the owner\'s options depend on where the guest is in their visit', () => {
+  const state = prepareState();
+  state.nextArrival = 100000;
+  const waiting = seatedGuest(state, { id: 1, arrivedAt: state.minute });
+  assert.deepEqual(ownerActionsFor(state, waiting).map((a) => a.id), ['greet'], 'a new arrival can be greeted');
+  state.minute += 4;
+  assert.deepEqual(ownerActionsFor(state, waiting).map((a) => a.id), ['greet', 'hurry'], 'a guest who has waited can be checked on');
+  const eating = servedGuest(state, { id: 2 });
+  assert.deepEqual(ownerActionsFor(state, eating).map((a) => a.id), ['checkin', 'refill', 'comp']);
+  const leaving = servedGuest(state, { id: 3, phase: 'checkout' });
+  assert.deepEqual(ownerActionsFor(state, leaving).map((a) => a.id), ['thank']);
+  assert.deepEqual(ownerActionsFor(state, undefined), []);
+  state.pantry.coffee = [];
+  assert.ok(!ownerActionsFor(state, eating).some((a) => a.id === 'refill'), 'no refill without coffee');
+});
+
+test('each thing the owner says can be said once to a guest, and costs what it should', () => {
+  const state = prepareState();
+  state.nextArrival = 100000;
+  const guest = servedGuest(state);
+  const coffee = pantryQuantity(state, 'coffee');
+  const first = talkToGuest(state, guest.id, 'refill');
+  assert.equal(first.ok, true);
+  assert.equal(pantryQuantity(state, 'coffee'), coffee - 1, 'a refill uses a portion of coffee');
+  assert.ok(first.reply.length > 5);
+  assert.equal(talkToGuest(state, guest.id, 'refill').reason, 'already');
+  assert.equal(talkToGuest(state, guest.id, 'greet').reason, 'not-now', 'no hello once they have eaten');
+  assert.equal(talkToGuest(state, 999, 'refill').reason, 'unknown');
+  assert.equal(talkToGuest(state, guest.id, 'teleport').reason, 'unknown');
+  assert.ok(guest.rapport >= 5);
+  assert.ok(state.events.some((event) => event.type === 'owner'));
+});
+
+test('hearing out an unhappy guest builds more rapport than a polite word, and a wait check forgives some of the wait', () => {
+  const state = prepareState();
+  state.nextArrival = 100000;
+  const happy = servedGuest(state, { id: 1 });
+  const unhappy = servedGuest(state, { id: 2, foodQuality: 40, serviceQuality: 50, seatId: 'table-b-west' });
+  talkToGuest(state, happy.id, 'checkin');
+  talkToGuest(state, unhappy.id, 'checkin');
+  assert.ok(unhappy.rapport > happy.rapport, 'listening to a complaint counts for more');
+  assert.equal(guestMood(state, unhappy), 'Not happy with the meal');
+  assert.equal(guestMood(state, happy), 'Enjoying breakfast');
+  const late = seatedGuest(state, { id: 3, seatId: 'table-c-west', arrivedAt: state.minute - 6 });
+  assert.equal(guestMood(state, late), 'Getting impatient');
+  talkToGuest(state, late.id, 'hurry');
+  assert.equal(late.waitCredit, 3);
+});
+
+test('taking a meal off the bill gives up the sale', () => {
+  const state = prepareState();
+  state.nextArrival = 100000;
+  const guest = servedGuest(state, { foodCost: 1.5 });
+  const cash = state.cash;
+  assert.equal(talkToGuest(state, guest.id, 'comp').ok, true);
+  assert.equal(guest.comped, true);
+  run(state, 40);
+  assert.equal(state.cash, cash, 'nothing was paid');
+  assert.equal(guest.spend, 0);
+  assert.equal(state.dayStats.revenue, 0);
+});
+
+test('a guest the owner looked after rates the visit higher and recovers from a bad meal', () => {
+  const rate = (extra) => {
+    const state = prepareState();
+    state.random = () => 0;
+    return maybeLeaveReview(state, { id: 1, name: 'Maya', orderedMenuId: 'coffee', foodQuality: 60, serviceQuality: 62, ...extra });
+  };
+  const ignored = rate({});
+  const looked = rate({ rapport: 20 });
+  assert.ok(looked.rating > ignored.rating, `rated ${looked.rating} vs ${ignored.rating}`);
+  assert.equal(looked.outcome, 'recovered');
+  assert.match(looked.text, /owner/i);
+  assert.equal(looked.ownerVisited, true);
+  assert.equal(ignored.ownerVisited, false);
+  const warm = rate({ rapport: 10, foodQuality: 90, serviceQuality: 88 });
+  assert.equal(warm.outcome, 'warm');
+  assert.ok(warm.rating >= 4);
+  // And they are likelier to write one at all.
+  const writes = (rapport) => { let n = 0; for (let i = 0; i < 400; i++) { const s = prepareState(); s.random = () => i / 400; if (maybeLeaveReview(s, { id: i, name: 'A', orderedMenuId: 'coffee', foodQuality: 80, serviceQuality: 80, rapport })) n += 1; } return n; };
+  assert.ok(writes(15) > writes(0) + 30, 'a warmed-up guest writes more often');
+});
+
+test('talking to the crew lifts morale, which moves the quality of their work', () => {
+  const state = prepareState();
+  state.nextArrival = 100000;
+  const before = crewStatus(state).find((person) => person.id === 'bob');
+  assert.equal(before.morale, 70);
+  assert.equal(before.quality, before.baseQuality);
+  assert.deepEqual(staffActionsFor(state, 'bob').map((a) => a.id), ['chat', 'praise', 'bonus']);
+  const cash = state.cash;
+  const bonus = talkToStaff(state, 'bob', 'bonus');
+  assert.equal(bonus.ok, true);
+  assert.equal(state.cash, cash - 20);
+  assert.equal(state.dayStats.bonuses, 20);
+  assert.equal(talkToStaff(state, 'bob', 'bonus').reason, 'not-now', 'one bonus a day');
+  assert.ok(staffQuality(state, 'bob') > before.quality, 'a happier cook cooks better');
+  assert.equal(crewStatus(state).find((person) => person.id === 'bob').mood, 'Energized');
+  const worn = prepareState();
+  worn.staffMorale.bob = 10;
+  assert.ok(staffQuality(worn, 'bob') < before.quality - 15, 'a fed-up cook cooks worse');
+  assert.equal(talkToStaff(state, 'nobody', 'chat').reason, 'unknown');
+});
+
+test('praise is hollow when the work has not been good, and chats have a cooldown', () => {
+  const state = prepareState();
+  state.dayStats.ordersServed = 5; state.dayStats.foodQualityTotal = 5 * 50; state.dayStats.serviceQualityTotal = 5 * 90;
+  const hollow = talkToStaff(state, 'bob', 'praise');
+  const earned = talkToStaff(state, 'waiter', 'praise');
+  assert.ok(earned.gained > hollow.gained, `${earned.gained} vs ${hollow.gained}`);
+  assert.ok(talkToStaff(state, 'lou', 'chat').ok);
+  assert.equal(talkToStaff(state, 'lou', 'chat').reason, 'not-now', 'not twice in a row');
+  state.minute += 100;
+  assert.equal(talkToStaff(state, 'lou', 'chat').ok, true, 'but again after a while');
+  state.cash = 5;
+  assert.ok(!staffActionsFor(state, 'lou').some((a) => a.id === 'bonus'), 'no bonus without the cash');
+});
+
+test('left alone, a crew\'s morale settles lower over the day', () => {
+  const state = prepareState();
+  beginDay(state);
+  state.nextArrival = 100000;
+  const start = state.staffMorale.bob;
+  run(state, 600, 1);
+  assert.ok(state.staffMorale.bob < start - 3 && state.staffMorale.bob > 50, `settled at ${state.staffMorale.bob.toFixed(1)}`);
+});
+
+test('a busy day with nobody looking after the crew wears the cook down, and the owner is told once', () => {
+  const state = prepareState();
+  const events = [];
+  runDay(state, () => {});
+  assert.ok(state.dayStats.ordersServed >= 20, 'a real service');
+  assert.ok(state.staffMorale.bob < 60, `the cook is tired (${state.staffMorale.bob.toFixed(1)})`);
+  assert.ok(state.staffMorale.bob < state.staffMorale.lou, 'the cook works harder than the host');
+  const worn = prepareState();
+  worn.nextArrival = 100000;
+  worn.staffMorale.bob = 40.2;
+  seatedGuest(worn);
+  run(worn, 10);
+  assert.equal(worn.events.filter((event) => /Bob is worn down/.test(event.message)).length, 1);
+  assert.equal(loadGameState(saveGameState(worn)).staffMorale.bob, worn.staffMorale.bob, 'morale survives a save');
+  void events;
+});
+
+test('looking after the crew through a busy day keeps the cook cooking well', () => {
+  const alone = prepareState(), looked = prepareState();
+  runDay(alone, () => {});
+  let last = -1e9;
+  runDay(looked, (state) => {
+    if (state.minute - last >= 100) {
+      last = state.minute;
+      for (const id of ['bob', 'waiter', 'lou']) { talkToStaff(state, id, 'chat'); talkToStaff(state, id, 'praise'); }
+    }
+  });
+  assert.ok(looked.staffMorale.bob > alone.staffMorale.bob + 10, `${looked.staffMorale.bob.toFixed(0)} vs ${alone.staffMorale.bob.toFixed(0)}`);
+  assert.ok(staffQuality(looked, 'bob') > staffQuality(alone, 'bob') + 4);
 });
