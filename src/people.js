@@ -51,13 +51,20 @@ export function specOf(name) {
 /** The regulars who come in on the first morning; the rest are built while the cafe is open. */
 export const FIRST_WAVE = ['russo', 'walt', 'priya', 'ari'];
 
+/**
+ * What a person is built with. The engine's default figure wears aviator sunglasses, which suit nobody at breakfast,
+ * so glasses are always off unless a spec says otherwise.
+ */
+export function humanOptions(spec, detail) {
+  return {
+    sex: spec.sex, detail, outfit: spec.outfit, look: spec.look, features: spec.features,
+    hair: spec.hair, glasses: spec.glasses ?? null, ...(spec.beard ? { beard: spec.beard } : {}),
+  };
+}
+
 /** Build one person. The result is { group, pose(spec), human }: the group is at the floor and WORLD_SCALE tall. */
 export function buildPerson(GFX, name, detail = detailOf(name)) {
-  const spec = specOf(name);
-  const human = createHuman(GFX, {
-    sex: spec.sex, detail, outfit: spec.outfit, look: spec.look, features: spec.features,
-    hair: spec.hair, ...(spec.beard ? { beard: spec.beard } : {}),
-  });
+  const human = createHuman(GFX, humanOptions(specOf(name), detail));
   human.group.scale.setScalar(WORLD_SCALE);
   let last = -Infinity, lastClip = null;
   return {

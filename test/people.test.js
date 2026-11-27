@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { garmentsFor, HAIRSTYLES, BEARDS } from 'madness-engine/people';
-import { CREW, FIRST_WAVE, DETAIL, specOf, detailOf } from '../src/people.js';
+import { CREW, FIRST_WAVE, DETAIL, specOf, detailOf, humanOptions } from '../src/people.js';
 import { RESIDENTS, RESIDENT_BY_ID } from '../src/residents.js';
 import { CAFE_MENU_BY_ID } from '../src/menu.js';
 
@@ -41,4 +41,9 @@ test('the first wave is a subset of the regulars and detail grows with a person\
   assert.equal(detailOf('resident:russo'), DETAIL.resident);
   assert.equal(detailOf('staff:bob'), DETAIL.staff);
   assert.throws(() => specOf('resident:nobody'), /nobody/);
+});
+
+test('nobody is built wearing sunglasses unless their spec asks for them', () => {
+  for (const name of everyone) assert.equal(humanOptions(specOf(name), 0.6).glasses, null, `${name} wears no glasses`);
+  assert.equal(humanOptions({ ...specOf('owner'), glasses: 'aviator' }, 0.6).glasses, 'aviator');
 });
