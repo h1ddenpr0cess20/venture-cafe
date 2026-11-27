@@ -50,3 +50,12 @@ test('the kitchen counters stay inside the kitchen and clear of its doorway', ()
     assert.ok(f.x + f.w / 2 <= gap[0] + 1e-6 || f.x - f.w / 2 >= gap[1] - 1e-6, `${name} leaves the doorway open`);
   }
 });
+
+test('the bar stools have a waiter stop of their own, and every seat has a stop to be served from', () => {
+  for (const seat of CAFE_SEATS) {
+    const stop = layout.serviceStopFor(seat);
+    assert.ok(stop, `${seat.id} has a service stop`);
+    assert.equal(navBlocked(stop.x, stop.z), false, `the stop for ${seat.id} is clear`);
+    assert.ok(findWalkPath(WAITER_HOME, [stop.x, 0, stop.z], { strict: true }), `the waiter can reach the stop for ${seat.id}`);
+  }
+});

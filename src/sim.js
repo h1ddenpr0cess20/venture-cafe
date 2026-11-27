@@ -1,4 +1,4 @@
-import { CAFE_SEATS } from './layout.js';
+import { CAFE_AREAS } from './layout.js';
 import { CAFE_MENU, CAFE_MENU_BY_ID } from './menu.js';
 import { RESIDENTS, RESIDENT_BY_ID } from './residents.js';
 
@@ -131,6 +131,7 @@ export function createGameState(seed = 20261031) {
     customers: [],
     nextArrival: DAY_OPEN + 18,
     customerSequence: 0,
+    partySequence: 0,
     lotSequence: 0,
     eventSequence: 0,
     events: [],
@@ -229,8 +230,8 @@ export function pullExpired(state, id = null) {
 }
 
 /** Who walks in next: anyone not already in the cafe, regulars leaning toward their usual hours. */
-export function chooseResident(state) {
-  const inside = new Set(state.customers.map((c) => c.residentId));
+export function chooseResident(state, alsoExclude = []) {
+  const inside = new Set([...state.customers.map((c) => c.residentId), ...alsoExclude]);
   const hour = state.minute / 60;
   // `availableResidents` (a Set of ids, set by the world as their people finish building) is not saved.
   const ready = state.availableResidents?.size ? RESIDENTS.filter((r) => state.availableResidents.has(r.id)) : RESIDENTS;
@@ -250,50 +251,94 @@ export function chooseDish(state, resident) {
   return menu[menu.length - 1] ?? CAFE_MENU_BY_ID['scrambled-eggs'];
 }
 
-function spawnCustomer(state) {
-  const diningSeats = CAFE_SEATS.filter((candidate) => candidate.style !== 'stool');
-  if (state.customers.length >= Math.min(10, diningSeats.length)) return null;
-  const occupiedSeats = new Set(state.customers.map((customer) => customer.seatId).filter(Boolean));
-  // Guests spread out: take a free seat at the quietest table, so nobody shares a table while another sits empty.
-  const diners = (tableId) => diningSeats.filter((candidate) => candidate.tableId === tableId && occupiedSeats.has(candidate.id)).length;
-  const seat = diningSeats.filter((candidate) => !occupiedSeats.has(candidate.id))
-    .reduce((best, candidate) => (!best || diners(candidate.tableId) < diners(best.tableId) ? candidate : best), null);
-  if (!seat) return null;
-  const resident = chooseResident(state);
-  const menuChoice = chooseDish(state, resident);
-  const browseTime = 12 + state.random() * 5;
-  const customer = {
-    id: ++state.customerSequence,
-    residentId: resident.id,
-    name: resident.name,
-    reviewName: `${resident.full.split(' ')[0][0]}. ${resident.full.split(' ').slice(-1)[0]}`,
-    tag: resident.tag,
-    thrift: resident.thrift,
-    menuChoiceId: menuChoice.id,
-    orderedMenuId: null,
-    orderTakenAt: null,
-    arrivedAt: state.minute,
-    servedAt: null,
-    foodQuality: null,
-    serviceQuality: null,
-    ingredientCoverage: null,
-    foodCost: 0,
-    seatId: seat.id,
-    arrivalDuration: 2.4,
-    arrivalTimer: 2.4,
-    serviceStatus: 'waiting',
-    phase: 'browsing',
-    phaseTotal: browseTime,
-    phaseTimer: browseTime,
-    result: null,
-    bought: 0,
-    spend: 0,
-  };
-  state.customers.push(customer);
-  state.dayStats.customers += 1;
-  state.lifetime.customers += 1;
-  pushEvent(state, 'customer', `${resident.name} took a seat.`, 'Dining room · waiting to order');
-  return customer;
+const MAX_GUESTS = 14;
+
+/** A party of one to four: mostly pairs and singles, now and then a table of three or four. */
+function rollPartySize(state) {
+  const roll = state.random();
+  return roll < 0.3 ? 1 : roll < 0.72 ? 2 : roll < 0.88 ? 3 : 4;
+}
+
+/**
+ * Where a party sits. A table or booth is one party's (strangers never share one); the bar is shared, but only
+ * singles and pairs sit at it. Among the areas that fit, a party picks one at random, weighted toward what suits
+ * its size: singles lean to the bar, pairs to tables and booths, bigger parties to tables.
+ */
+function chooseArea(state, size, taken) {
+  const free = (area) => area.seats.filter((seat) => !taken.has(seat.id));
+  const options = CAFE_AREAS.map((area) => {
+    const open = free(area);
+    if (area.kind === 'bar') return { area, open, weight: size <= 2 && open.length >= size ? (size === 1 ? 3 : 1) : 0 };
+    const empty = open.length === area.seats.length;
+    const fits = empty && area.seats.length >= size;
+    return { area, open, weight: !fits ? 0 : area.kind === 'booth' ? (size === 1 ? 1 : 2) : size >= 3 ? 3 : size === 2 ? 2 : 1 };
+  }).filter((option) => option.weight > 0);
+  if (!options.length) return null;
+  let roll = state.random() * options.reduce((n, option) => n + option.weight, 0);
+  for (const option of options) { roll -= option.weight; if (roll <= 0) return option; }
+  return options[options.length - 1];
+}
+
+const AREA_PHRASE = { table: 'a table', booth: 'a booth', bar: 'the bar' };
+const joinNames = (names) => (names.length < 2 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
+
+/** A party walks in together, takes seats together, and is served together. Returns the guests who came in. */
+function spawnParty(state) {
+  const room = MAX_GUESTS - state.customers.length;
+  if (room <= 0) return [];
+  const taken = new Set(state.customers.map((customer) => customer.seatId).filter(Boolean));
+  let size = Math.min(rollPartySize(state), room);
+  let option = null;
+  while (size >= 1 && !(option = chooseArea(state, size, taken))) size -= 1;      // no room for the whole party: a smaller one comes in
+  if (!option) return [];
+  let open = option.open;
+  if (option.area.kind === 'bar') {                                                 // friends at the bar sit side by side
+    const start = Math.floor(state.random() * (open.length - size + 1));
+    open = open.slice(start, start + size);
+  }
+  const partyId = ++state.partySequence;
+  const browseTime = 12 + state.random() * 5 + (size - 1) * 2.5;
+  const names = [], members = [];
+  for (let index = 0; index < size; index += 1) {
+    const resident = chooseResident(state, members.map((member) => member.residentId));
+    const seat = open[index];
+    const dish = chooseDish(state, resident);
+    const customer = {
+      id: ++state.customerSequence,
+      partyId, partySize: size, partyIndex: index,
+      residentId: resident.id,
+      name: resident.name,
+      reviewName: `${resident.full.split(' ')[0][0]}. ${resident.full.split(' ').slice(-1)[0]}`,
+      tag: resident.tag,
+      thrift: resident.thrift,
+      menuChoiceId: dish.id,
+      orderedMenuId: null,
+      orderTakenAt: null,
+      arrivedAt: state.minute,
+      servedAt: null,
+      foodQuality: null,
+      serviceQuality: null,
+      ingredientCoverage: null,
+      foodCost: 0,
+      seatId: seat.id,
+      arrivalDuration: 2.4,
+      arrivalTimer: 2.4 + index * 0.55,                   // a party comes through the door one after another
+      serviceStatus: 'waiting',
+      phase: 'browsing',
+      phaseTotal: browseTime,
+      phaseTimer: browseTime,
+      result: null,
+      bought: 0,
+      spend: 0,
+    };
+    state.customers.push(customer);
+    members.push(customer);
+    names.push(resident.name);
+    state.dayStats.customers += 1;
+    state.lifetime.customers += 1;
+  }
+  pushEvent(state, 'customer', `${joinNames(names)} took ${AREA_PHRASE[option.area.kind]}.`, size === 1 ? 'Dining room · waiting to order' : `Party of ${size} · waiting to order`);
+  return members;
 }
 
 function awardStoreExperience(state, amount) {
@@ -422,6 +467,7 @@ export function loadGameState(serialized) {
     state.reviews ??= OPENING_REVIEWS.map((review) => ({ ...review })).reverse();
     state.reviewSequence ??= Math.max(0, ...state.reviews.map((review) => review.id || 0));
     state.waiterWork ??= emptyWaiterWork();
+    state.partySequence ??= Math.max(0, ...state.customers.map((customer) => customer.partyId ?? 0));
     for (const customer of state.customers) {
       customer.arrivalDuration ??= 2.4;
       customer.arrivalTimer ??= 0;
@@ -527,7 +573,7 @@ export function maybeLeaveReview(state, customer) {
 
 /** The same neighborhood reputation that earns reviews also determines footfall. */
 export function customerArrivalInterval(state) {
-  return (18 + state.random() * 14) / trafficMultiplier(state);
+  return (30 + state.random() * 24) / trafficMultiplier(state);
 }
 
 /** Foot traffic: reputation sets it, and a bigger range (a higher store level) draws more of the block, up to half again. */
@@ -613,7 +659,7 @@ export function startNextDay(state) {
   state.paused = false;
   state.customers = [];
     state.waiterWork = emptyWaiterWork();
-  state.nextArrival = DAY_OPEN + (12 + state.random() * 20) / trafficMultiplier(state);
+  state.nextArrival = DAY_OPEN + (10 + state.random() * 16) / trafficMultiplier(state);
   state.dayStats = emptyDayStats();
   pushEvent(state, 'note', `Day ${state.day} begins.`, 'Fresh start. Check the walk-in before the rush.');
   return true;
@@ -649,7 +695,10 @@ function advanceWaiterService(state, deltaMinutes) {
         customer.phase === 'browsing' && customer.serviceStatus === 'waiting' && (customer.arrivalTimer ?? 0) <= 0);
       if (!next) return;
       next.serviceStatus = 'serving';
-      task = state.waiterWork = { stage: 'walking-to-table', customerId: next.id, seatId: next.seatId, timer: 1.3, duration: 1.3 };
+      // Already at this party's table: the rest of the party is served without another walk to the kitchen and back.
+      const fast = !!next.partyId && state.lastServed?.partyId === next.partyId && state.minute - state.lastServed.at < 8;
+      const k = fast ? 0.35 : 1;
+      task = state.waiterWork = { stage: 'walking-to-table', customerId: next.id, seatId: next.seatId, timer: 1.3 * k, duration: 1.3 * k, k };
       pushEvent(state, 'staff', `The waiter is greeting ${next.name}.`, 'Walking to the table · ready to take the breakfast order.');
     }
     const customer = state.customers.find((entry) => entry.id === task.customerId);
@@ -666,7 +715,7 @@ function advanceWaiterService(state, deltaMinutes) {
 
     if (task.stage === 'walking-to-table') {
       task.stage = 'taking-order';
-      task.timer = task.duration = 0.55;
+      task.timer = task.duration = 0.55 * (task.k ?? 1);
     } else if (task.stage === 'taking-order') {
       const menuItem = CAFE_MENU_BY_ID[customer.menuChoiceId] ?? CAFE_MENU[1];
       customer.orderedMenuId = menuItem.id;
@@ -674,25 +723,26 @@ function advanceWaiterService(state, deltaMinutes) {
       customer.orderTakenAt = state.minute;
       customer.serviceStatus = 'ordered';
       task.stage = 'returning-to-kitchen';
-      task.timer = task.duration = 0.45;
+      task.timer = task.duration = 0.45 * (task.k ?? 1);
       pushEvent(state, 'staff', `The waiter took ${customer.name}'s order.`, `${menuItem.name} · sent to kitchen`);
     } else if (task.stage === 'returning-to-kitchen') {
       task.stage = 'preparing-order';
-      task.timer = task.duration = 0.9;
+      task.timer = task.duration = 0.9 * ((task.k ?? 1) < 1 ? 0.6 : 1);
       pushEvent(state, 'staff', `Bob is preparing ${customer.name}'s order.`, `${customer.orderedMenuName} · breakfast made to order`);
     } else if (task.stage === 'preparing-order') {
       prepareCafeMeal(state, customer);
       task.stage = 'walking-to-delivery';
-      task.timer = task.duration = 0.9;
+      task.timer = task.duration = 0.9 * (task.k ?? 1);
     } else if (task.stage === 'walking-to-delivery') {
       task.stage = 'presenting';
-      task.timer = task.duration = 0.4;
+      task.timer = task.duration = 0.4 * (task.k ?? 1);
     } else if (task.stage === 'presenting') {
       finishCafeServiceQuality(state, customer);
       customer.serviceStatus = 'served';
       customer.servedAt = state.minute;
       task.stage = 'returning';
-      task.timer = task.duration = 0.8;
+      task.timer = task.duration = 0.8 * (task.k ?? 1);
+      state.lastServed = { partyId: customer.partyId ?? null, at: state.minute };
       pushEvent(state, 'staff', `The waiter served ${customer.name}'s ${customer.orderedMenuName}.`,
         `Food ${customer.foodQuality}/100 · service ${customer.serviceQuality}/100`);
     } else {
@@ -749,7 +799,7 @@ export function advanceGame(state, deltaMinutes) {
     advanceCustomerPhases(state, step);
     advanceWaiterService(state, step);
     if (state.minute >= state.nextArrival && state.minute < LAST_CALL) {
-      spawnCustomer(state);
+      spawnParty(state);
       state.nextArrival = state.minute + customerArrivalInterval(state);
     }
     if (state.reputation <= 0) { endDay(state); state.gameOver = true; break; }
@@ -766,7 +816,7 @@ export function beginDay(state) {
   if (state.started || state.gameOver) return false;
   state.started = true;
   state.paused = false;
-  state.nextArrival = state.minute + (10 + state.random() * 14) / trafficMultiplier(state);
+  state.nextArrival = state.minute + (8 + state.random() * 12) / trafficMultiplier(state);
   pushEvent(state, 'good', 'The cafe is open.', 'First customer should be along shortly.');
   return true;
 }

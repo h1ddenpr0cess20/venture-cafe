@@ -10,7 +10,7 @@ import { STAFF, RESIDENTS, RESIDENT_BY_ID, activeFrameDelta } from './sim.js';
 import {
   SHELL, FRONT_DOOR, REAR_DOOR, KITCHEN, SIDEWALK, COUNTER, BACKBAR,
   DOOR_IN, SIDEWALK_SPAWN, SIDEWALK_EXITS, CHECKOUT, LOU_HOME, BOB_HOME, WAITER_HOME, KITCHEN_PASS, PLAYER_HOME,
-  navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS, CAFE_SERVICE_STOPS, CAFE_PLACE_SETTINGS, TABLE_TOP,
+  navBlocked, nearestWalkable, findWalkPath, planWalkRoute, routeLength, pointOnRoute, CAFE_SEATS, serviceStopFor, CAFE_PLACE_SETTINGS,
 } from './layout.js';
 import { wallOpacity, easeOpacity, WALL_MODES } from './walls.js';
 import { buildPerson, FIRST_WAVE } from './people.js';
@@ -436,7 +436,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
   const readyResidents = new Set(FIRST_WAVE);
   const servicePlates = new Map(CAFE_PLACE_SETTINGS.map((place) => {
     const plate = createBreakfastPlate(GFX, place.plateKind);
-    plate.position.set(place.x, TABLE_TOP + 0.02, place.z);
+    plate.position.set(place.x, place.y + 0.02, place.z);
     plate.scale.setScalar(0.22);
     plate.visible = false;
     scene.add(plate);
@@ -541,7 +541,7 @@ export async function createVentureCafeWorld(host, onProgress = () => {}) { // e
     const stageName = task.stage ?? 'idle';
     const customer = state.customers.find((candidate) => candidate.id === task.customerId);
     const seat = CAFE_SEATS.find((candidate) => candidate.id === task.seatId);
-    const stop = CAFE_SERVICE_STOPS.find((candidate) => candidate.id === seat?.tableId);
+    const stop = serviceStopFor(seat);
     const here = [actor.model.group.position.x, 0, actor.model.group.position.z];
 
     if (actor.routeStage !== stageName || actor.routeCustomer !== task.customerId) {

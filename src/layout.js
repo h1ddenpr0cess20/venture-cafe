@@ -37,11 +37,15 @@ export const KITCHEN_FIXTURES = {
   passWest: { x: -8.15, z: -2.62, w: 1.3, d: 0.5 },
   passEast: { x: -5.25, z: -2.62, w: 1.3, d: 0.5 },
 };
+/** Square four-person tables: a chair on every side. */
+export const TABLE_SIZE = 0.95;
+/** How far a chair's middle stands from the middle of its table. */
+export const SEAT_GAP = TABLE_SIZE / 2 + 0.33;
 export const CAFE_TABLES = [
-  { id: 'table-a', x: -3.35, z: 0.55, w: 1.35, d: 0.9 },
-  { id: 'table-b', x: 0.25, z: 0.55, w: 1.35, d: 0.9 },
-  { id: 'table-c', x: -3.35, z: 4.25, w: 1.35, d: 0.9 },
-  { id: 'table-d', x: 0.25, z: 4.25, w: 1.35, d: 0.9 },
+  { id: 'table-a', x: -3.35, z: 0.55, w: TABLE_SIZE, d: TABLE_SIZE },
+  { id: 'table-b', x: 0.25, z: 0.55, w: TABLE_SIZE, d: TABLE_SIZE },
+  { id: 'table-c', x: -3.35, z: 4.25, w: TABLE_SIZE, d: TABLE_SIZE },
+  { id: 'table-d', x: 0.25, z: 4.25, w: TABLE_SIZE, d: TABLE_SIZE },
 ];
 export const CAFE_BOOTHS = [
   { id: 'booth-a', x: -7.65, z: 0.55, depth: 2.0 },
@@ -53,48 +57,76 @@ export const CAFE_BAR_STOOLS = [
   { id: 'bar-3', x: 4.2, z: -4.05, yaw: Math.PI },
   { id: 'bar-4', x: 5.95, z: -4.05, yaw: Math.PI },
 ];
+/**
+ * A booth is a table with a bench down each long side: the west bench against the wall, the east one facing it with
+ * its own high back. `wallX` is the west back, `tableX` the middle of the table, `westX` and `eastX` where the two
+ * benches' guests sit, `eastWallX` the east back.
+ */
+export const boothGeometry = (booth) => {
+  const wallX = booth.x - 0.67, tableX = wallX + 1.5, westX = wallX + 0.47;
+  return { wallX, tableX, westX, eastX: 2 * tableX - westX, eastWallX: 2 * tableX - wallX };
+};
+const BOOTH_SEAT_Z = [-0.5, 0.5];
 export const CAFE_SEATS = [
+  // A table's chairs, in the order a party fills them: opposite each other first.
   ...CAFE_TABLES.flatMap((table) => [
-    { id: `${table.id}-west`, x: table.x - 1.0, z: table.z, yaw: Math.PI / 2, tableId: table.id, style: 'chair' },
-    { id: `${table.id}-east`, x: table.x + 1.0, z: table.z, yaw: -Math.PI / 2, tableId: table.id, style: 'chair' },
-  ]),
-  { id: 'booth-a-1', x: -7.85, z: 0.0, yaw: Math.PI / 2, tableId: 'booth-a', style: 'booth' },
-  { id: 'booth-a-2', x: -7.85, z: 1.1, yaw: Math.PI / 2, tableId: 'booth-a', style: 'booth' },
-  { id: 'booth-b-1', x: -7.85, z: 3.7, yaw: Math.PI / 2, tableId: 'booth-b', style: 'booth' },
-  { id: 'booth-b-2', x: -7.85, z: 4.8, yaw: Math.PI / 2, tableId: 'booth-b', style: 'booth' },
+    { id: `${table.id}-west`, x: table.x - SEAT_GAP, z: table.z, yaw: Math.PI / 2 },
+    { id: `${table.id}-east`, x: table.x + SEAT_GAP, z: table.z, yaw: -Math.PI / 2 },
+    { id: `${table.id}-north`, x: table.x, z: table.z - SEAT_GAP, yaw: 0 },
+    { id: `${table.id}-south`, x: table.x, z: table.z + SEAT_GAP, yaw: Math.PI },
+  ].map((seat) => ({ ...seat, tableId: table.id, style: 'chair' }))),
+  // A booth's seats: west and east opposite each other, then the next row.
+  ...CAFE_BOOTHS.flatMap((booth) => {
+    const g = boothGeometry(booth);
+    return BOOTH_SEAT_Z.flatMap((dz, row) => [
+      { id: `${booth.id}-w${row + 1}`, x: g.westX, z: booth.z + dz, yaw: Math.PI / 2 },
+      { id: `${booth.id}-e${row + 1}`, x: g.eastX, z: booth.z + dz, yaw: -Math.PI / 2 },
+    ].map((seat) => ({ ...seat, tableId: booth.id, style: 'booth' })));
+  }),
   ...CAFE_BAR_STOOLS.map((seat) => ({ ...seat, tableId: 'bar', style: 'stool' })),
 ];
+/** Where parties sit: each table and booth is one area for one party (four seats), the bar is shared by strangers. */
+export const CAFE_AREAS = [
+  ...CAFE_TABLES.map((table) => ({ id: table.id, kind: 'table', seats: CAFE_SEATS.filter((seat) => seat.tableId === table.id) })),
+  ...CAFE_BOOTHS.map((booth) => ({ id: booth.id, kind: 'booth', seats: CAFE_SEATS.filter((seat) => seat.tableId === booth.id) })),
+  { id: 'bar', kind: 'bar', seats: CAFE_SEATS.filter((seat) => seat.tableId === 'bar') },
+];
+/** Where the waiter stands to serve: in the aisle beside each table, beside each booth, behind each bar stool. */
 export const CAFE_SERVICE_STOPS = [
   ...CAFE_TABLES.map((table) => ({
     id: table.id,
-    x: table.x,
-    z: table.z + table.d / 2 + 0.85,
-    plateX: table.x,
-    plateZ: table.z,
-    plateKind: table.id === 'table-a' ? 'scramble' : table.id === 'table-b' ? 'sunny' : 'omelette',
+    x: table.x < -1.5 ? table.x + SEAT_GAP + 0.45 : table.x - SEAT_GAP - 0.45,
+    z: table.z,
   })),
-  ...CAFE_BOOTHS.map((booth) => ({
-    id: booth.id,
-    x: -4.75,
-    z: booth.z,
-    plateX: -6.7,
-    plateZ: booth.z,
-    plateKind: 'omelette',
-  })),
+  ...CAFE_BOOTHS.map((booth) => ({ id: booth.id, x: -4.75, z: booth.z })),
+  ...CAFE_BAR_STOOLS.map((seat) => ({ id: seat.id, x: seat.x, z: seat.z + 0.7 })),
 ];
-/** A place setting in front of each dining seat, so every diner's meal lands on the table in front of them. */
+/** The stop for a seat: its own (the bar), else its table's or booth's. */
+export const serviceStopFor = (seat) => CAFE_SERVICE_STOPS.find((stop) => stop.id === seat?.id) ?? CAFE_SERVICE_STOPS.find((stop) => stop.id === seat?.tableId);
+
+/** A place setting in front of each seat, so every diner's meal lands on the table or counter in front of them. */
 const PLATE_KINDS = ['scramble', 'sunny', 'omelette'];
-export const CAFE_PLACE_SETTINGS = CAFE_SEATS.filter((seat) => seat.style !== 'stool').map((seat, index) => ({
-  seatId: seat.id,
-  tableId: seat.tableId,
-  x: seat.style === 'booth' ? -6.7 : seat.x + Math.sin(seat.yaw) * 0.62,
-  z: seat.z,
-  plateKind: PLATE_KINDS[index % PLATE_KINDS.length],
-}));
+export const CAFE_PLACE_SETTINGS = CAFE_SEATS.map((seat, index) => {
+  const booth = CAFE_BOOTHS.find((candidate) => candidate.id === seat.tableId);
+  const place = seat.style === 'booth'
+    ? { x: boothGeometry(booth).tableX + (seat.x < boothGeometry(booth).tableX ? -0.15 : 0.15), z: seat.z, y: TABLE_TOP }
+    : seat.style === 'stool'
+      ? { x: seat.x, z: COUNTER.z + COUNTER.d / 2 - 0.35, y: COUNTER.top }
+      : { x: seat.x + Math.sin(seat.yaw) * 0.6, z: seat.z + Math.cos(seat.yaw) * 0.6, y: TABLE_TOP };
+  return { seatId: seat.id, tableId: seat.tableId, ...place, plateKind: PLATE_KINDS[index % PLATE_KINDS.length] };
+});
 export const CAFE_FURNITURE = [
-  // A table blocks its top less the 0.15 at each end that a diner's knees go under, so a seat beside it is reachable.
-  ...CAFE_TABLES.map((table) => ({ x: table.x, z: table.z, w: table.w - 0.3, d: table.d })),
-  ...CAFE_BOOTHS.map((booth) => ({ x: booth.x - 0.67, z: booth.z, w: 0.14, d: booth.depth + 0.12 })),
+  // A table blocks its top less what a diner's knees go under, so a chair beside it is reachable.
+  ...CAFE_TABLES.map((table) => ({ x: table.x, z: table.z, w: table.w - 0.3, d: table.d - 0.3 })),
+  // A booth: the two high backs, and the table between the benches.
+  ...CAFE_BOOTHS.flatMap((booth) => {
+    const g = boothGeometry(booth);
+    return [
+      { x: g.wallX, z: booth.z, w: 0.14, d: booth.depth + 0.12 },
+      { x: g.eastWallX, z: booth.z, w: 0.14, d: booth.depth + 0.12 },
+      { x: g.tableX, z: booth.z, w: 0.4, d: booth.depth - 0.2 },
+    ];
+  }),
 ];
 export const CAFE_EXTERIOR_BLOCKERS = []; // The entrance is clear; the old mascot plinths were removed.
 

@@ -6,6 +6,7 @@ import {
   maybeLeaveReview, customerArrivalInterval, trafficLabel, reviewSummary, openMenu, chooseDish, chooseResident,
   RESIDENTS, STAFF, getStoreLevel, getStoreLevelProgress, activeFrameDelta, expiredQuantity, qtyOf, isOpen,
 } from '../src/sim.js';
+import { CAFE_AREAS } from '../src/layout.js';
 import { CAFE_MENU, CAFE_MENU_BY_ID } from '../src/menu.js';
 
 function prepareState() {
@@ -337,21 +338,84 @@ test('nobody is let in after last call', () => {
   assert.equal(state.customers.length, 0);
 });
 
-test('guests spread across tables, and each diner has a place setting in front of their own seat', async () => {
-  const { CAFE_SEATS, CAFE_TABLES, CAFE_PLACE_SETTINGS } = await import('../src/layout.js');
-  const state = prepareState();
-  const tableOf = (customer) => CAFE_SEATS.find((seat) => seat.id === customer.seatId).tableId;
-  for (let i = 0; i < 400 && state.customers.length < 3; i++) advanceGame(state, 0.25);
-  assert.ok(state.customers.length >= 2, 'several guests arrived');
-  const first = state.customers.slice(0, Math.min(state.customers.length, 3));
-  assert.equal(new Set(first.map(tableOf)).size, first.length, 'nobody shares a table while another sits empty');
+test('every seat has a place setting in front of it: on its table, or on the bar in front of a stool', async () => {
+  const { CAFE_SEATS, CAFE_TABLES, CAFE_PLACE_SETTINGS, COUNTER, TABLE_TOP } = await import('../src/layout.js');
+  assert.equal(CAFE_PLACE_SETTINGS.length, CAFE_SEATS.length);
   const seen = new Set();
   for (const place of CAFE_PLACE_SETTINGS) {
     assert.ok(!seen.has(`${place.x},${place.z}`), `${place.seatId} has its own place`);
     seen.add(`${place.x},${place.z}`);
     const table = CAFE_TABLES.find((t) => t.id === place.tableId);
-    if (table) assert.ok(Math.abs(place.x - table.x) < table.w / 2 && Math.abs(place.z - table.z) < table.d / 2 && place.x !== table.x, `${place.seatId} is set on its table, not in the middle`);
+    if (table) {
+      assert.ok(Math.abs(place.x - table.x) < table.w / 2 && Math.abs(place.z - table.z) < table.d / 2, `${place.seatId} is set on its table`);
+      assert.ok(!(place.x === table.x && place.z === table.z), 'not in the middle of the table');
+      assert.equal(place.y, TABLE_TOP);
+    }
+    if (place.tableId === 'bar') {
+      assert.equal(place.y, COUNTER.top, 'bar meals go on the counter');
+      assert.ok(Math.abs(place.z - COUNTER.z) < COUNTER.d / 2, 'on the counter, not in the air');
+    }
   }
+});
+
+/** Run a whole day in frame-sized steps, calling `each` after every step. */
+function runDay(state, each) {
+  beginDay(state);
+  for (let i = 0; i < 14 * 60 * 2 && !state.dayEnded; i += 1) { advanceGame(state, 0.5); each(state); }
+}
+
+test('guests come in as parties of one to four, and use the whole dining room, not the same two tables', () => {
+  const state = prepareState();
+  const seen = new Map();                       // customer id → { party, size, area }
+  const areaUse = new Map();                    // area id → number of parties
+  runDay(state, () => {
+    for (const customer of state.customers) {
+      if (seen.has(customer.id)) continue;
+      const area = CAFE_AREAS.find((candidate) => candidate.seats.some((seat) => seat.id === customer.seatId));
+      seen.set(customer.id, { party: customer.partyId, size: customer.partySize, area: area.id });
+    }
+  });
+  const parties = new Map();
+  for (const guest of seen.values()) parties.set(guest.party, guest);
+  const sizes = [...parties.values()].map((party) => party.size);
+  assert.ok(sizes.length >= 12, `a busy day has plenty of parties (${sizes.length})`);
+  for (const size of [1, 2]) assert.ok(sizes.includes(size), `there are parties of ${size}`);
+  assert.ok(sizes.some((size) => size >= 3), 'and bigger ones');
+  assert.ok(sizes.every((size) => size >= 1 && size <= 4));
+  for (const party of parties.values()) areaUse.set(party.area, (areaUse.get(party.area) ?? 0) + 1);
+  assert.ok(areaUse.size >= 5, `parties spread over most of the seating areas (${[...areaUse.keys()].join(', ')})`);
+  assert.ok(Math.max(...areaUse.values()) < parties.size * 0.4, 'no one table does most of the work');
+  assert.ok(areaUse.has('bar'), 'someone sits at the bar');
+});
+
+test('a table or booth is never shared by strangers, no seat is double-booked, and a party sits together', () => {
+  const state = prepareState();
+  runDay(state, () => {
+    const seats = state.customers.map((customer) => customer.seatId);
+    assert.equal(new Set(seats).size, seats.length, 'one guest per seat');
+    for (const area of CAFE_AREAS.filter((candidate) => candidate.kind !== 'bar')) {
+      const guests = state.customers.filter((customer) => area.seats.some((seat) => seat.id === customer.seatId));
+      assert.ok(new Set(guests.map((guest) => guest.partyId)).size <= 1, `${area.id} holds one party`);
+    }
+    for (const guest of state.customers) {
+      const mates = state.customers.filter((other) => other.partyId === guest.partyId);
+      if (guest.partySize <= 1 || guest.seatId.startsWith('bar')) continue;
+      assert.ok(mates.every((mate) => CAFE_AREAS.find((a) => a.seats.some((s) => s.id === mate.seatId)) === CAFE_AREAS.find((a) => a.seats.some((s) => s.id === guest.seatId))), 'a party shares its table');
+    }
+    assert.ok(state.customers.length <= 14);
+  });
+});
+
+test('a party is served in one visit: the waiter does not walk to the kitchen and back for every guest', () => {
+  const solo = prepareState(), party = prepareState();
+  solo.nextArrival = party.nextArrival = 100000;
+  const mate = (state, id, index, seat) => seatedGuest(state, { id, partyId: 7, partySize: 4, partyIndex: index, seatId: seat, name: `G${id}`, orderedMenuId: undefined });
+  mate(solo, 9101, 0, 'table-a-west');
+  ['table-a-west', 'table-a-east', 'table-a-north', 'table-a-south'].forEach((seat, index) => mate(party, 9201 + index, index, seat));
+  const finish = (state, guests) => { let t = 0; while (t < 60 && !guests.every((g) => g.serviceStatus === 'served')) { advanceGame(state, 0.1); t += 0.1; } return t; };
+  const one = finish(solo, solo.customers), four = finish(party, party.customers);
+  assert.ok(four < one * 3, `four guests (${four.toFixed(1)} min) take far less than four visits (${(one * 4).toFixed(1)} min)`);
+  assert.ok(four < 12, 'and are all served within a reasonable wait');
 });
 
 test('the pantry health report counts what needs the owner\'s attention', () => {

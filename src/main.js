@@ -368,8 +368,8 @@ function diningPanel() {
     <div class="panel-section">
       <div class="section-heading"><div><div class="eyebrow">DINING ROOM</div><h3>Guest seating</h3></div><span class="subtle">${diningSeats.length} SEATS</span></div>
       <div class="metric-grid">
-        <div class="metric-card"><span>TABLES</span><strong>${CAFE_TABLES.length}</strong><small>Walnut two-tops with turned legs</small></div>
-        <div class="metric-card"><span>BOOTHS</span><strong>${CAFE_BOOTHS.length}</strong><small>Walnut benches, green cushions</small></div>
+        <div class="metric-card"><span>TABLES</span><strong>${CAFE_TABLES.length}</strong><small>Square walnut four-tops</small></div>
+        <div class="metric-card"><span>BOOTHS</span><strong>${CAFE_BOOTHS.length}</strong><small>A bench on each side</small></div>
         <div class="metric-card"><span>OCCUPIED</span><strong>${occupiedCount}</strong><small>${diningSeats.length - occupiedCount} seats available</small></div>
         <div class="metric-card"><span>COUNTER STOOLS</span><strong>${CAFE_BAR_STOOLS.length}</strong><small>Perch seating along the service bar</small></div>
       </div>
