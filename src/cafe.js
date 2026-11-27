@@ -3,8 +3,7 @@ import { createWoodTable } from 'madness-engine/props/wood-table';
 import { createWoodChair } from 'madness-engine/props/wood-chair';
 import { createWoodBoard } from 'madness-engine/props/wood-board';
 import { createBookcase, woodMaterial, woodUV } from 'madness-engine/props/bookcase';
-import { COUNTER, BACKBAR, KITCHEN, KITCHEN_FIXTURES, CAFE_TABLES, CAFE_BOOTHS, CAFE_BAR_STOOLS, CAFE_SEATS, WORLD_SCALE, SEAT_TOP, TABLE_TOP } from './layout.js';
-import { createBreakfastPlate } from './cafe-food.js';
+import { COUNTER, BACKBAR, KITCHEN, KITCHEN_FIXTURES, CAFE_TABLES, CAFE_BOOTHS, CAFE_BAR_STOOLS, CAFE_SEATS, WORLD_SCALE, SEAT_TOP, boothGeometry } from './layout.js';
 
 /** The cafe's wood: walnut for the furniture and the bar, in the engine's lacquer. */
 const SPECIES = 'walnut';
@@ -37,7 +36,6 @@ export function buildCafeFurniture(GFX, scene) {
   const wood = woodMaterial(GFX, SPECIES, FINISH);
   const woodRaw = woodMaterial(GFX, SPECIES, 'sanded');
   const brass = new GFX.MeshStandardMaterial({ color: '#b99a61', metalness: 0.58, roughness: 0.34 });
-  const porcelain = new GFX.MeshStandardMaterial({ color: '#f4eedf', roughness: 0.28 });
   const cushion = new GFX.MeshStandardMaterial({ color: '#315b4c', roughness: 0.88 });
 
   // Dining tables: walnut, turned legs, sized for the cafe's two-person tables.
@@ -52,33 +50,26 @@ export function buildCafeFurniture(GFX, scene) {
     furniture(scene, createWoodChair(GFX, { kind: 'barstool', species: SPECIES, finish: FINISH, seed: Math.round(seat.x * 11) }).group, seat.x, seat.z, seat.yaw);
   }
 
-  // Booths: a walnut bench with a high back against the west wall and a table in front of it.
+  // Booths: a table with a bench down each side, each with its own high back and cushions.
   for (const booth of CAFE_BOOTHS) {
-    const wallX = booth.x - 0.67, benchX = wallX + 0.4;
-    lumber(GFX, scene, wood, wallX + 0.03, 0.62, booth.z, 0.06, 1.24, booth.depth, 'z');                       // the back
-    lumber(GFX, scene, woodRaw, benchX + 0.02, SEAT_TOP / 2 - 0.02, booth.z, 0.74, SEAT_TOP - 0.04, booth.depth - 0.04, 'z'); // the base
-    box(GFX, scene, benchX, SEAT_TOP - 0.01, booth.z, 0.64, 0.06, booth.depth - 0.12, cushion);                  // the seat cushion
-    box(GFX, scene, wallX + 0.1, 0.78, booth.z, 0.1, 0.46, booth.depth - 0.16, cushion);                         // the back cushion
-    lumber(GFX, scene, wood, wallX + 0.35, 1.26, booth.z, 0.7, 0.05, booth.depth, 'z');                        // the cap rail
+    const g = boothGeometry(booth);
+    for (const side of [-1, 1]) {                                          // -1 the west bench, against the wall; 1 the east one
+      const back = side < 0 ? g.wallX : g.eastWallX;
+      const seatX = side < 0 ? g.westX : g.eastX;
+      lumber(GFX, scene, wood, back - side * 0.03, 0.55, booth.z, 0.06, 1.1, booth.depth, 'z');                          // the back
+      lumber(GFX, scene, woodRaw, seatX - side * 0.02, SEAT_TOP / 2 - 0.02, booth.z, 0.74, SEAT_TOP - 0.04, booth.depth - 0.04, 'z'); // the base
+      box(GFX, scene, seatX, SEAT_TOP - 0.01, booth.z, 0.64, 0.06, booth.depth - 0.12, cushion);                          // the seat cushion
+      box(GFX, scene, back - side * 0.1, 0.72, booth.z, 0.1, 0.42, booth.depth - 0.16, cushion);                          // the back cushion
+      lumber(GFX, scene, wood, back - side * 0.35, 1.12, booth.z, 0.7, 0.05, booth.depth, 'z');                           // the cap rail
+    }
     const made = createWoodTable(GFX, { kind: 'dining', species: SPECIES, finish: FINISH, legs: 'turned', width: (booth.depth - 0.1) / WORLD_SCALE, depth: 0.7 / WORLD_SCALE });
-    furniture(scene, made.group, wallX + 1.5, booth.z, Math.PI / 2);
+    furniture(scene, made.group, g.tableX, booth.z, Math.PI / 2);
   }
 
-  const cupMat = new GFX.MeshStandardMaterial({ color: '#eee5d4', roughness: 0.23 });
-  const coffee = new GFX.MeshStandardMaterial({ color: '#493326', roughness: 0.2 });
-  for (const [x, z] of [[0.9, -5.45], [2.15, -5.45]]) {
-    cylinder(GFX, scene, x, COUNTER.top + 0.1, z, 0.09, 0.08, 0.18, cupMat, 24);
-    cylinder(GFX, scene, x, COUNTER.top + 0.195, z, 0.075, 0.075, 0.012, coffee, 24);
-    const handle = new GFX.Mesh(new GFX.TorusGeometry(0.045, 0.012, 8, 18), porcelain);
-    handle.position.set(x + 0.09, COUNTER.top + 0.1, z); handle.rotation.y = Math.PI / 2; scene.add(handle);
-  }
-  cylinder(GFX, scene, 5.65, COUNTER.top + 0.13, -5.45, 0.105, 0.105, 0.22, new GFX.MeshStandardMaterial({ color: '#d87927', roughness: 0.18 }), 24);
-  box(GFX, scene, 4.45, COUNTER.top + 0.11, -5.45, 0.42, 0.18, 0.28, woodRaw);
+  // On the bar: only what belongs there when nobody is eating. Meals are set down in front of whoever sits down.
+  cylinder(GFX, scene, 5.65, COUNTER.top + 0.13, -5.45, 0.105, 0.105, 0.22, new GFX.MeshStandardMaterial({ color: '#d87927', roughness: 0.18 }), 24);   // the juice dispenser
+  box(GFX, scene, 4.45, COUNTER.top + 0.11, -5.45, 0.42, 0.18, 0.28, woodRaw);                                                                          // the napkin box
   box(GFX, scene, 4.45, COUNTER.top + 0.22, -5.45, 0.34, 0.08, 0.22, brass);
-  for (const [kind, x] of [['potato-scramble', 0.25], ['sunny', 2.8], ['omelette', 5.15]]) {
-    const plate = createBreakfastPlate(GFX, kind);
-    plate.position.set(x, COUNTER.top + 0.055, -5.45); plate.scale.setScalar(0.24); scene.add(plate);
-  }
 }
 
 /** The long service bar: a carcass with raised walnut panels on the dining side and a lacquered walnut top. */

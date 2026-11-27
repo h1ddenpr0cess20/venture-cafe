@@ -51,24 +51,32 @@ export function specOf(name) {
 /** The regulars who come in on the first morning; the rest are built while the cafe is open. */
 export const FIRST_WAVE = ['russo', 'walt', 'priya', 'ari'];
 
+/**
+ * What a person is built with. The engine's default figure wears aviator sunglasses, which suit nobody at breakfast,
+ * so glasses are always off unless a spec says otherwise.
+ */
+export function humanOptions(spec, detail) {
+  return {
+    sex: spec.sex, detail, outfit: spec.outfit, look: spec.look, features: spec.features,
+    hair: spec.hair, glasses: spec.glasses ?? null, ...(spec.beard ? { beard: spec.beard } : {}),
+  };
+}
+
 /** Build one person. The result is { group, pose(spec), human }: the group is at the floor and WORLD_SCALE tall. */
 export function buildPerson(GFX, name, detail = detailOf(name)) {
-  const spec = specOf(name);
-  const human = createHuman(GFX, {
-    sex: spec.sex, detail, outfit: spec.outfit, look: spec.look, features: spec.features,
-    hair: spec.hair, ...(spec.beard ? { beard: spec.beard } : {}),
-  });
+  const human = createHuman(GFX, humanOptions(specOf(name), detail));
   human.group.scale.setScalar(WORLD_SCALE);
-  let last = -Infinity, lastClip = null;
+  let last = -Infinity, lastClip = null, lastSpeaking = false;
   return {
     group: human.group,
     human,
     /** Pose the person; `pace` is the engine's `speed`. Skipped when it was posed a moment ago and nothing about it has changed. */
-    pose({ clip, t, time, seed = 0, pace = 1 }) {
-      const interval = clip === 'walk' || clip === 'run' ? 0.05 : clip === 'sit' && t < 0.45 ? 0.05 : 0.16;
-      if (clip === lastClip && time - last < interval) return;
-      last = time; lastClip = clip;
-      human.pose({ clip, t, time, seed, speed: pace });
+    pose({ clip, t, time, seed = 0, pace = 1, speaking = false }) {
+      // Someone talking is posed as often as someone walking: the mouth moves quickly.
+      const interval = speaking || clip === 'walk' || clip === 'run' ? 0.05 : clip === 'sit' && t < 0.45 ? 0.05 : 0.16;
+      if (clip === lastClip && speaking === lastSpeaking && time - last < interval) return;
+      last = time; lastClip = clip; lastSpeaking = speaking;
+      human.pose({ clip, t, time, seed, speed: pace, speaking });
     },
   };
 }

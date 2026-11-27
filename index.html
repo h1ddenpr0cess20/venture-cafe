@@ -25,12 +25,13 @@
         </div>
       </header>
 
-      <main class="workspace">
+      <main class="workspace" id="workspace">
         <section class="scene-column">
           <div class="scene-topline">
             <div class="scene-location"><span class="live-dot"></span><span id="shop-status">Closed</span></div>
             <div class="scene-tools">
-              <span class="scene-hint">Middle-drag to look · WASD to walk</span>
+              <span class="scene-hint">Middle-drag to look · WASD to walk · walk up to someone to talk</span>
+              <button class="wall-button" id="panel-toggle" type="button" title="Hide or show the cafe office (O)" aria-expanded="true">Hide office</button>
               <button class="wall-button" id="wall-toggle" type="button" title="Walls between the camera and the cafe fade away (Auto), stay solid, or are always see-through">Walls: Auto</button>
               <div class="speed-control" aria-label="Speed">
                 <button data-speed="1" class="speed-button active">1×</button>
@@ -49,6 +50,7 @@
             </div>
             <button type="button" data-player-move="down" aria-label="Walk backward">▼</button>
           </div>
+          <div id="interact-card" class="interact-card hidden" aria-live="polite"></div>
           <div class="scene-bottomline">
             <span id="foot-customers">0 diners</span><span class="scene-divider">·</span><span id="foot-traffic">Traffic steady</span><span class="scene-divider">·</span><span id="foot-staff">3 crew on shift</span>
           </div>
@@ -66,7 +68,7 @@
               <p>Run a neighborhood breakfast cafe. Seat the regulars, keep the kitchen stocked, price the menu and keep the books balanced.</p>
               <div class="opening-details"><span><b>$1,250</b> starting cash</span><span><b>9</b> dishes</span><span><b>3</b> crew</span></div>
               <button id="open-store" class="primary-button opening-button">Open for breakfast</button>
-              <div class="opening-note">Walk with WASD or the arrow keys, hold Shift to hurry, and hold the middle mouse button and drag to look around.</div>
+              <div class="opening-note">Walk with WASD or the arrow keys and hold Shift to hurry. Walk up to a guest or the crew to talk to them; number keys pick what to say. Hold the middle mouse button and drag to look around.</div>
             </div>
           </div>
           <div id="day-summary" class="day-summary hidden"></div>
@@ -76,7 +78,7 @@
         <aside class="ops-panel">
           <div class="ops-heading">
             <h2>Cafe office</h2>
-            <div class="open-pill" id="open-pill"><i></i><span>Closed</span></div>
+            <div class="ops-heading-tools"><div class="open-pill" id="open-pill"><i></i><span>Closed</span></div><button class="icon-button" id="panel-close" type="button" title="Hide the office (O)" aria-label="Hide the office">›</button></div>
           </div>
           <nav class="tabs" aria-label="Cafe management">
             <button class="tab active" data-tab="overview">Overview</button>

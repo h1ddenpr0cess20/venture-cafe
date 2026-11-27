@@ -1,4 +1,4 @@
-import { CAFE_SEATS } from './layout.js';
+import { CAFE_AREAS } from './layout.js';
 import { CAFE_MENU, CAFE_MENU_BY_ID } from './menu.js';
 import { RESIDENTS, RESIDENT_BY_ID } from './residents.js';
 
@@ -105,7 +105,7 @@ function newLot(state, ingredient, qty, { age = 0 } = {}) {
   };
 }
 
-const emptyDayStats = () => ({ revenue: 0, unitsSold: 0, customers: 0, complaints: 0, waste: 0, purchases: 0, grossProfit: 0, stockouts: 0, pricedOut: 0, foodQualityTotal: 0, serviceQualityTotal: 0, ordersServed: 0 });
+const emptyDayStats = () => ({ revenue: 0, unitsSold: 0, customers: 0, complaints: 0, waste: 0, purchases: 0, grossProfit: 0, bonuses: 0, stockouts: 0, pricedOut: 0, foodQualityTotal: 0, serviceQualityTotal: 0, ordersServed: 0 });
 const emptyWaiterWork = () => ({ stage: 'idle', customerId: null, seatId: null, timer: 0, duration: 0 });
 
 export function createGameState(seed = 20261031) {
@@ -131,6 +131,7 @@ export function createGameState(seed = 20261031) {
     customers: [],
     nextArrival: DAY_OPEN + 18,
     customerSequence: 0,
+    partySequence: 0,
     lotSequence: 0,
     eventSequence: 0,
     events: [],
@@ -143,6 +144,8 @@ export function createGameState(seed = 20261031) {
     supplierOrders: 0,
     orderCases: Object.fromEntries(INGREDIENTS.map((ingredient) => [ingredient.id, 1])),
     waiterWork: emptyWaiterWork(),
+    staffMorale: Object.fromEntries(STAFF.map((person) => [person.id, BASELINE_MORALE])),
+    staffTalked: {},
     lastDaySummary: null,
   };
   // The walk-in starts stocked for the opening menu, with a slightly older delivery of the fast movers
@@ -229,8 +232,8 @@ export function pullExpired(state, id = null) {
 }
 
 /** Who walks in next: anyone not already in the cafe, regulars leaning toward their usual hours. */
-export function chooseResident(state) {
-  const inside = new Set(state.customers.map((c) => c.residentId));
+export function chooseResident(state, alsoExclude = []) {
+  const inside = new Set([...state.customers.map((c) => c.residentId), ...alsoExclude]);
   const hour = state.minute / 60;
   // `availableResidents` (a Set of ids, set by the world as their people finish building) is not saved.
   const ready = state.availableResidents?.size ? RESIDENTS.filter((r) => state.availableResidents.has(r.id)) : RESIDENTS;
@@ -250,50 +253,94 @@ export function chooseDish(state, resident) {
   return menu[menu.length - 1] ?? CAFE_MENU_BY_ID['scrambled-eggs'];
 }
 
-function spawnCustomer(state) {
-  const diningSeats = CAFE_SEATS.filter((candidate) => candidate.style !== 'stool');
-  if (state.customers.length >= Math.min(10, diningSeats.length)) return null;
-  const occupiedSeats = new Set(state.customers.map((customer) => customer.seatId).filter(Boolean));
-  // Guests spread out: take a free seat at the quietest table, so nobody shares a table while another sits empty.
-  const diners = (tableId) => diningSeats.filter((candidate) => candidate.tableId === tableId && occupiedSeats.has(candidate.id)).length;
-  const seat = diningSeats.filter((candidate) => !occupiedSeats.has(candidate.id))
-    .reduce((best, candidate) => (!best || diners(candidate.tableId) < diners(best.tableId) ? candidate : best), null);
-  if (!seat) return null;
-  const resident = chooseResident(state);
-  const menuChoice = chooseDish(state, resident);
-  const browseTime = 12 + state.random() * 5;
-  const customer = {
-    id: ++state.customerSequence,
-    residentId: resident.id,
-    name: resident.name,
-    reviewName: `${resident.full.split(' ')[0][0]}. ${resident.full.split(' ').slice(-1)[0]}`,
-    tag: resident.tag,
-    thrift: resident.thrift,
-    menuChoiceId: menuChoice.id,
-    orderedMenuId: null,
-    orderTakenAt: null,
-    arrivedAt: state.minute,
-    servedAt: null,
-    foodQuality: null,
-    serviceQuality: null,
-    ingredientCoverage: null,
-    foodCost: 0,
-    seatId: seat.id,
-    arrivalDuration: 2.4,
-    arrivalTimer: 2.4,
-    serviceStatus: 'waiting',
-    phase: 'browsing',
-    phaseTotal: browseTime,
-    phaseTimer: browseTime,
-    result: null,
-    bought: 0,
-    spend: 0,
-  };
-  state.customers.push(customer);
-  state.dayStats.customers += 1;
-  state.lifetime.customers += 1;
-  pushEvent(state, 'customer', `${resident.name} took a seat.`, 'Dining room · waiting to order');
-  return customer;
+const MAX_GUESTS = 14;
+
+/** A party of one to four: mostly pairs and singles, now and then a table of three or four. */
+function rollPartySize(state) {
+  const roll = state.random();
+  return roll < 0.3 ? 1 : roll < 0.72 ? 2 : roll < 0.88 ? 3 : 4;
+}
+
+/**
+ * Where a party sits. A table or booth is one party's (strangers never share one); the bar is shared, but only
+ * singles and pairs sit at it. Among the areas that fit, a party picks one at random, weighted toward what suits
+ * its size: singles lean to the bar, pairs to tables and booths, bigger parties to tables.
+ */
+function chooseArea(state, size, taken) {
+  const free = (area) => area.seats.filter((seat) => !taken.has(seat.id));
+  const options = CAFE_AREAS.map((area) => {
+    const open = free(area);
+    if (area.kind === 'bar') return { area, open, weight: size <= 2 && open.length >= size ? (size === 1 ? 3 : 1) : 0 };
+    const empty = open.length === area.seats.length;
+    const fits = empty && area.seats.length >= size;
+    return { area, open, weight: !fits ? 0 : area.kind === 'booth' ? (size === 1 ? 1 : 2) : size >= 3 ? 3 : size === 2 ? 2 : 1 };
+  }).filter((option) => option.weight > 0);
+  if (!options.length) return null;
+  let roll = state.random() * options.reduce((n, option) => n + option.weight, 0);
+  for (const option of options) { roll -= option.weight; if (roll <= 0) return option; }
+  return options[options.length - 1];
+}
+
+const AREA_PHRASE = { table: 'a table', booth: 'a booth', bar: 'the bar' };
+const joinNames = (names) => (names.length < 2 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
+
+/** A party walks in together, takes seats together, and is served together. Returns the guests who came in. */
+function spawnParty(state) {
+  const room = MAX_GUESTS - state.customers.length;
+  if (room <= 0) return [];
+  const taken = new Set(state.customers.map((customer) => customer.seatId).filter(Boolean));
+  let size = Math.min(rollPartySize(state), room);
+  let option = null;
+  while (size >= 1 && !(option = chooseArea(state, size, taken))) size -= 1;      // no room for the whole party: a smaller one comes in
+  if (!option) return [];
+  let open = option.open;
+  if (option.area.kind === 'bar') {                                                 // friends at the bar sit side by side
+    const start = Math.floor(state.random() * (open.length - size + 1));
+    open = open.slice(start, start + size);
+  }
+  const partyId = ++state.partySequence;
+  const browseTime = 12 + state.random() * 5 + (size - 1) * 2.5;
+  const names = [], members = [];
+  for (let index = 0; index < size; index += 1) {
+    const resident = chooseResident(state, members.map((member) => member.residentId));
+    const seat = open[index];
+    const dish = chooseDish(state, resident);
+    const customer = {
+      id: ++state.customerSequence,
+      partyId, partySize: size, partyIndex: index,
+      residentId: resident.id,
+      name: resident.name,
+      reviewName: `${resident.full.split(' ')[0][0]}. ${resident.full.split(' ').slice(-1)[0]}`,
+      tag: resident.tag,
+      thrift: resident.thrift,
+      menuChoiceId: dish.id,
+      orderedMenuId: null,
+      orderTakenAt: null,
+      arrivedAt: state.minute,
+      servedAt: null,
+      foodQuality: null,
+      serviceQuality: null,
+      ingredientCoverage: null,
+      foodCost: 0,
+      seatId: seat.id,
+      arrivalDuration: 2.4,
+      arrivalTimer: 2.4 + index * 0.55,                   // a party comes through the door one after another
+      serviceStatus: 'waiting',
+      phase: 'browsing',
+      phaseTotal: browseTime,
+      phaseTimer: browseTime,
+      result: null,
+      bought: 0,
+      spend: 0,
+    };
+    state.customers.push(customer);
+    members.push(customer);
+    names.push(resident.name);
+    state.dayStats.customers += 1;
+    state.lifetime.customers += 1;
+  }
+  pushEvent(state, 'customer', `${joinNames(names)} took ${AREA_PHRASE[option.area.kind]}.`, size === 1 ? 'Dining room · waiting to order' : `Party of ${size} · waiting to order`);
+  return members;
 }
 
 function awardStoreExperience(state, amount) {
@@ -307,8 +354,12 @@ function awardStoreExperience(state, amount) {
 }
 
 
-function cafeStaffQuality(id) {
-  return STAFF.find((person) => person.id === id)?.quality ?? 70;
+/** Morale moves how well a crew member works: 30 points either side of steady is about 12 points of quality. */
+const BASELINE_MORALE = 70;
+export function staffQuality(state, id) {
+  const base = STAFF.find((person) => person.id === id)?.quality ?? 70;
+  const morale = state?.staffMorale?.[id] ?? BASELINE_MORALE;
+  return Math.max(1, Math.min(100, base + (morale - BASELINE_MORALE) * 0.4));
 }
 
 function prepareCafeMeal(state, customer) {
@@ -334,9 +385,10 @@ function prepareCafeMeal(state, customer) {
     }
     state.pantry[id] = (state.pantry[id] ?? []).filter((lot) => lot.qty > 0);
   }
+  adjustMorale(state, 'bob', -0.5);                  // every plate is work
   const coverage = requiredUnits ? fulfilledUnits / requiredUnits : 1;
   const ingredientFreshness = fulfilledUnits ? freshnessTotal / fulfilledUnits : 0;
-  const kitchenSkill = cafeStaffQuality('bob') * 0.72 + 84 * 0.28;
+  const kitchenSkill = staffQuality(state, 'bob') * 0.72 + 84 * 0.28;
   customer.foodQuality = Math.max(1, Math.min(100, Math.round(kitchenSkill * 0.7 + ingredientFreshness * 0.3 - (1 - coverage) * 45)));
   customer.ingredientCoverage = Math.round(coverage * 100);
   customer.foodCost = Math.round(foodCost * 100) / 100;
@@ -350,9 +402,11 @@ function prepareCafeMeal(state, customer) {
 }
 
 function finishCafeServiceQuality(state, customer) {
-  const elapsed = Math.max(0, state.minute - (customer.arrivedAt ?? customer.orderTakenAt ?? state.minute));
-  const serviceBase = cafeStaffQuality('lou') * 0.36 + cafeStaffQuality('waiter') * 0.64;
+  const elapsed = Math.max(0, state.minute - (customer.arrivedAt ?? customer.orderTakenAt ?? state.minute) - (customer.waitCredit ?? 0));
+  const serviceBase = staffQuality(state, 'lou') * 0.36 + staffQuality(state, 'waiter') * 0.64;
   const timingFactor = Math.max(0.62, 1.04 - Math.max(0, elapsed - 2) * 0.025);
+  adjustMorale(state, 'waiter', -0.4);
+  adjustMorale(state, 'lou', -0.2);
   customer.serviceWait = Math.round(elapsed * 10) / 10;
   customer.serviceQuality = Math.max(1, Math.min(100, Math.round(serviceBase * timingFactor)));
 }
@@ -360,10 +414,10 @@ function finishCafeServiceQuality(state, customer) {
 function checkoutCafeOrder(state, customer) {
   const menuItem = CAFE_MENU_BY_ID[customer.orderedMenuId];
   if (!menuItem) { customer.result = 'not-served'; return; }
-  const revenue = state.menuPrices[menuItem.id] ?? menuItem.price;
+  const revenue = customer.comped ? 0 : state.menuPrices[menuItem.id] ?? menuItem.price;
   const foodCost = customer.foodCost ?? 0;
   // A guest still pays, but calls the cafe pricey if the dish costs more than they think it is worth.
-  const pricey = revenue > menuItem.price * (1 + (customer.thrift ?? 0.4)) + 1e-9;
+  const pricey = !customer.comped && revenue > menuItem.price * (1 + (customer.thrift ?? 0.4)) + 1e-9;
   customer.bought = 1;
   customer.spend = revenue;
   customer.pricey = pricey;
@@ -422,6 +476,9 @@ export function loadGameState(serialized) {
     state.reviews ??= OPENING_REVIEWS.map((review) => ({ ...review })).reverse();
     state.reviewSequence ??= Math.max(0, ...state.reviews.map((review) => review.id || 0));
     state.waiterWork ??= emptyWaiterWork();
+    state.staffMorale = { ...Object.fromEntries(STAFF.map((person) => [person.id, BASELINE_MORALE])), ...state.staffMorale };
+    state.staffTalked ??= {};
+    state.partySequence ??= Math.max(0, ...state.customers.map((customer) => customer.partyId ?? 0));
     for (const customer of state.customers) {
       customer.arrivalDuration ??= 2.4;
       customer.arrivalTimer ??= 0;
@@ -437,6 +494,18 @@ export function loadGameState(serialized) {
 }
 
 const CAFE_QUALITY_REVIEW_BANK = Object.freeze({
+  warm: [
+    'The owner came over to say hello and checked in on our table. It is the little things that make us come back.',
+    'Great breakfast, and the owner actually stopped to talk to us. You can tell they care about the place.',
+    'Friendly, relaxed and personal. The owner knew what we were having and asked how it was.',
+    'A proper neighborhood cafe: good food and an owner who makes time for the people at the tables.',
+  ],
+  recovered: [
+    'Our meal was not right, but the owner heard us out and made it right. That is how a cafe should handle a bad morning.',
+    'Something went wrong in the kitchen, and the owner owned it straight away. We will be back.',
+    'Not our best visit, but the owner listened and sorted it out without any fuss. Appreciated.',
+    'A slow start and a so-so plate, rescued by an owner who clearly cares. Giving the cafe another go.',
+  ],
   pricey: [
     'Lovely breakfast, but the menu prices have crept up. I would come more often if they came down a little.',
     'Good food and a warm room, though I paid more than I expected for eggs and toast.',
@@ -480,11 +549,16 @@ const CAFE_QUALITY_REVIEW_BANK = Object.freeze({
 function leaveCafeQualityReview(state, customer) {
   const foodQuality = Math.max(0, Math.min(100, Number(customer.foodQuality) || 0));
   const serviceQuality = Math.max(0, Math.min(100, Number(customer.serviceQuality) || 0));
-  const overall = foodQuality * 0.55 + serviceQuality * 0.45;
-  const chance = overall < 58 ? 0.72 : overall < 72 ? 0.56 : 0.38;
+  const base = foodQuality * 0.55 + serviceQuality * 0.45;
+  // A guest the owner made time for thinks better of the visit, and is likelier to say so.
+  const rapport = Math.min(30, customer.rapport ?? 0);
+  const overall = Math.min(100, base + rapport * 0.4);
+  const chance = (overall < 58 ? 0.72 : overall < 72 ? 0.56 : 0.38) + (rapport >= 10 ? 0.18 : 0);
   if (state.random() >= chance) return null;
   const rating = Math.min(customer.pricey ? 3 : 5, overall >= 91 ? 5 : overall >= 78 ? 4 : overall >= 65 ? 3 : overall >= 50 ? 2 : 1);
-  const bankName = foodQuality < 58 && serviceQuality < 58 ? 'poor'
+  const bankName = rapport >= 12 && base < 68 ? 'recovered'
+    : rapport >= 8 && overall >= 72 && !customer.pricey ? 'warm'
+    : foodQuality < 58 && serviceQuality < 58 ? 'poor'
     : foodQuality < serviceQuality - 8 ? 'foodPoor'
       : serviceQuality < foodQuality - 8 ? 'servicePoor'
         : customer.pricey ? 'pricey'
@@ -504,11 +578,19 @@ function leaveCafeQualityReview(state, customer) {
     menuItemId: customer.orderedMenuId ?? null,
     foodQuality,
     serviceQuality,
+    ownerVisited: rapport > 0,
   };
   state.reviews.unshift(review);
   state.reviews.length = Math.min(state.reviews.length, 48);
   customer.reviewLeft = true;
-  const impact = ({ 1: -0.48, 2: -0.28, 3: -0.06, 4: 0.05, 5: 0.14 })[rating];
+  if (rating <= 2) {                                  // a bad review lands on the whole crew, and hardest on whoever it blames
+    for (const person of STAFF) adjustMorale(state, person.id, -2);
+    if (bankName === 'foodPoor' || bankName === 'poor') adjustMorale(state, 'bob', -2);
+    if (bankName === 'servicePoor' || bankName === 'poor') adjustMorale(state, 'waiter', -2);
+  } else if (rating === 5) {
+    for (const person of STAFF) adjustMorale(state, person.id, 1);
+  }
+  const impact = ({ 1: -0.48, 2: -0.28, 3: -0.06, 4: 0.05, 5: 0.14 })[rating] + rapport * 0.004;
   state.reputation = Math.max(0, Math.min(100, state.reputation + impact));
   pushEvent(state, 'review', `${customer.name} left a ${rating}-star review.`, review.text);
   return review;
@@ -527,7 +609,7 @@ export function maybeLeaveReview(state, customer) {
 
 /** The same neighborhood reputation that earns reviews also determines footfall. */
 export function customerArrivalInterval(state) {
-  return (18 + state.random() * 14) / trafficMultiplier(state);
+  return (30 + state.random() * 24) / trafficMultiplier(state);
 }
 
 /** Foot traffic: reputation sets it, and a bigger range (a higher store level) draws more of the block, up to half again. */
@@ -587,9 +669,9 @@ function endDay(state) {
     complaints: state.dayStats.complaints,
     waste: Math.round(state.dayStats.waste * 100) / 100,
     purchases: Math.round(state.dayStats.purchases * 100) / 100,
-    expenses: { ...costs, interest },
+    expenses: { ...costs, interest, bonuses: Math.round((state.dayStats.bonuses ?? 0) * 100) / 100 },
     totalExpenses: total,
-    net: Math.round((state.dayStats.grossProfit - total - state.dayStats.waste) * 100) / 100,
+    net: Math.round((state.dayStats.grossProfit - total - state.dayStats.waste - (state.dayStats.bonuses ?? 0)) * 100) / 100,
     cash: state.cash,
     debt: state.debt,
     averageFoodQuality: state.dayStats.ordersServed ? Math.round(state.dayStats.foodQualityTotal / state.dayStats.ordersServed) : 0,
@@ -613,7 +695,7 @@ export function startNextDay(state) {
   state.paused = false;
   state.customers = [];
     state.waiterWork = emptyWaiterWork();
-  state.nextArrival = DAY_OPEN + (12 + state.random() * 20) / trafficMultiplier(state);
+  state.nextArrival = DAY_OPEN + (10 + state.random() * 16) / trafficMultiplier(state);
   state.dayStats = emptyDayStats();
   pushEvent(state, 'note', `Day ${state.day} begins.`, 'Fresh start. Check the walk-in before the rush.');
   return true;
@@ -649,7 +731,10 @@ function advanceWaiterService(state, deltaMinutes) {
         customer.phase === 'browsing' && customer.serviceStatus === 'waiting' && (customer.arrivalTimer ?? 0) <= 0);
       if (!next) return;
       next.serviceStatus = 'serving';
-      task = state.waiterWork = { stage: 'walking-to-table', customerId: next.id, seatId: next.seatId, timer: 1.3, duration: 1.3 };
+      // Already at this party's table: the rest of the party is served without another walk to the kitchen and back.
+      const fast = !!next.partyId && state.lastServed?.partyId === next.partyId && state.minute - state.lastServed.at < 8;
+      const k = fast ? 0.35 : 1;
+      task = state.waiterWork = { stage: 'walking-to-table', customerId: next.id, seatId: next.seatId, timer: 1.3 * k, duration: 1.3 * k, k };
       pushEvent(state, 'staff', `The waiter is greeting ${next.name}.`, 'Walking to the table · ready to take the breakfast order.');
     }
     const customer = state.customers.find((entry) => entry.id === task.customerId);
@@ -666,7 +751,7 @@ function advanceWaiterService(state, deltaMinutes) {
 
     if (task.stage === 'walking-to-table') {
       task.stage = 'taking-order';
-      task.timer = task.duration = 0.55;
+      task.timer = task.duration = 0.55 * (task.k ?? 1);
     } else if (task.stage === 'taking-order') {
       const menuItem = CAFE_MENU_BY_ID[customer.menuChoiceId] ?? CAFE_MENU[1];
       customer.orderedMenuId = menuItem.id;
@@ -674,25 +759,26 @@ function advanceWaiterService(state, deltaMinutes) {
       customer.orderTakenAt = state.minute;
       customer.serviceStatus = 'ordered';
       task.stage = 'returning-to-kitchen';
-      task.timer = task.duration = 0.45;
+      task.timer = task.duration = 0.45 * (task.k ?? 1);
       pushEvent(state, 'staff', `The waiter took ${customer.name}'s order.`, `${menuItem.name} · sent to kitchen`);
     } else if (task.stage === 'returning-to-kitchen') {
       task.stage = 'preparing-order';
-      task.timer = task.duration = 0.9;
+      task.timer = task.duration = 0.9 * ((task.k ?? 1) < 1 ? 0.6 : 1);
       pushEvent(state, 'staff', `Bob is preparing ${customer.name}'s order.`, `${customer.orderedMenuName} · breakfast made to order`);
     } else if (task.stage === 'preparing-order') {
       prepareCafeMeal(state, customer);
       task.stage = 'walking-to-delivery';
-      task.timer = task.duration = 0.9;
+      task.timer = task.duration = 0.9 * (task.k ?? 1);
     } else if (task.stage === 'walking-to-delivery') {
       task.stage = 'presenting';
-      task.timer = task.duration = 0.4;
+      task.timer = task.duration = 0.4 * (task.k ?? 1);
     } else if (task.stage === 'presenting') {
       finishCafeServiceQuality(state, customer);
       customer.serviceStatus = 'served';
       customer.servedAt = state.minute;
       task.stage = 'returning';
-      task.timer = task.duration = 0.8;
+      task.timer = task.duration = 0.8 * (task.k ?? 1);
+      state.lastServed = { partyId: customer.partyId ?? null, at: state.minute };
       pushEvent(state, 'staff', `The waiter served ${customer.name}'s ${customer.orderedMenuName}.`,
         `Food ${customer.foodQuality}/100 · service ${customer.serviceQuality}/100`);
     } else {
@@ -728,6 +814,197 @@ function advanceCustomerPhases(state, deltaMinutes) {
   state.customers = state.customers.filter((customer) => customer.phase !== 'gone');
 }
 
+
+
+// ——— the owner and the crew ———
+
+/**
+ * Morale drifts toward a tired 55 on its own, so a good word wears off. Work wears people down (a meal cooked, a table
+ * served, a bad review) and talking to them lifts them. Below 40 someone is worn down, and the owner is told once.
+ */
+function adjustMorale(state, id, delta) {
+  const before = state.staffMorale[id] ?? BASELINE_MORALE;
+  const after = Math.max(0, Math.min(100, before + delta));
+  state.staffMorale[id] = after;
+  if (before >= 40 && after < 40) {
+    const person = STAFF.find((candidate) => candidate.id === id);
+    pushEvent(state, 'warning', `${person.name.split(' ')[0]} is worn down.`, 'Morale is low, and it is starting to show in the work. Have a word.');
+  }
+}
+
+function driftMorale(state, minutes) {
+  for (const person of STAFF) {
+    const before = state.staffMorale[person.id] ?? BASELINE_MORALE;
+    adjustMorale(state, person.id, (55 - before) * 0.0025 * minutes);   // left alone, a long shift settles a crew a little below steady
+  }
+}
+
+export function staffMoodWord(morale) {
+  return morale >= 80 ? 'Energized' : morale >= 60 ? 'Steady' : morale >= 40 ? 'Worn down' : 'Fed up';
+}
+
+/** For the crew tab: each person's morale, mood and the quality of work it adds up to. */
+export function crewStatus(state) {
+  return STAFF.map((person) => ({
+    id: person.id, name: person.name, role: person.role,
+    morale: Math.round(state.staffMorale[person.id] ?? BASELINE_MORALE),
+    mood: staffMoodWord(state.staffMorale[person.id] ?? BASELINE_MORALE),
+    quality: Math.round(staffQuality(state, person.id)),
+    baseQuality: person.quality,
+  }));
+}
+
+const absoluteMinute = (state) => state.day * 1440 + state.minute;
+
+/** What the owner can do for a crew member. `cooldown` is game minutes before they can be done again for the same person. */
+export const STAFF_ACTIONS = [
+  { id: 'chat', label: 'Check in', hint: 'Ask how the shift is going.', morale: 4, cooldown: 90, when: () => true },
+  { id: 'praise', label: 'Praise their work', hint: 'Counts for more when the work has been good.', morale: 8, cooldown: 120, when: () => true },
+  { id: 'bonus', label: 'Give a $20 bonus', hint: 'Comes out of the register. Once a day each.', morale: 15, cooldown: 840, cost: 20, when: (state) => state.cash >= 20 },
+];
+
+const STAFF_LINES = {
+  lou: {
+    chat: ['Busy, but good. The regulars keep me smiling.', 'Fine, boss. My feet are the only complaint.', 'Honestly, it is nice being asked.'],
+    praise: ['Thank you. I try to remember everyone\'s order.', 'That means a lot. I like it here.'],
+    praiseHollow: ['Thanks. I know today has been rough at the door.', 'Appreciate it. I will tighten up.'],
+    bonus: ['Twenty bucks? You are too kind. Thank you.', 'Wow. I did not expect that. Thank you.'],
+  },
+  bob: {
+    chat: ['The line is hot and the eggs are moving. Can not complain.', 'Pan is seasoned, the walk-in is stocked. I am good.', 'Not many people check on the kitchen. Thanks.'],
+    praise: ['Thanks. I take pride in a clean plate.', 'Good to hear. Soft eggs are all in the wrist.'],
+    praiseHollow: ['Thanks. I know a few plates went out wrong. I will fix it.', 'Appreciated. We were short on a few things today.'],
+    bonus: ['That is generous. I will put it toward a new knife.', 'Thank you, I will not forget it.'],
+  },
+  waiter: {
+    chat: ['Running all morning, but I like the pace.', 'Doing fine. Table three is a lovely bunch today.', 'Thanks for asking. I could use a glass of water.'],
+    praise: ['Thank you! I really like the regulars.', 'That makes my day.'],
+    praiseHollow: ['Thanks. I know service has been slow. I am working on it.', 'Appreciated. I will pick up the pace.'],
+    bonus: ['Oh, wow. Thank you so much.', 'That is really kind. Thank you.'],
+  },
+};
+
+/** The things the owner can do for this crew member right now. */
+export function staffActionsFor(state, staffId) {
+  if (!STAFF.some((person) => person.id === staffId)) return [];
+  const now = absoluteMinute(state);
+  return STAFF_ACTIONS.filter((action) => action.when(state) && now - (state.staffTalked[staffId]?.[action.id] ?? -1e9) >= action.cooldown)
+    .map(({ id, label, hint }) => ({ id, label, hint }));
+}
+
+/**
+ * The owner talks to a crew member. Returns { ok, reply, morale } or { ok: false, reason }.
+ * Praise lifts morale more when their recent work has actually been good.
+ */
+export function talkToStaff(state, staffId, actionId) {
+  const person = STAFF.find((candidate) => candidate.id === staffId);
+  const action = STAFF_ACTIONS.find((candidate) => candidate.id === actionId);
+  if (!person || !action) return { ok: false, reason: 'unknown' };
+  if (!staffActionsFor(state, staffId).some((available) => available.id === actionId)) return { ok: false, reason: 'not-now' };
+  let gain = action.morale;
+  let key = action.id;
+  if (action.id === 'praise') {
+    const served = state.dayStats.ordersServed;
+    const recent = staffId === 'bob' ? state.dayStats.foodQualityTotal / Math.max(1, served) : state.dayStats.serviceQualityTotal / Math.max(1, served);
+    if (served >= 2 && recent < 70) { gain = 3; key = 'praiseHollow'; }
+  }
+  if (action.cost) {
+    state.cash = Math.round((state.cash - action.cost) * 100) / 100;
+    state.dayStats.bonuses = (state.dayStats.bonuses ?? 0) + action.cost;
+  }
+  const before = state.staffMorale[staffId] ?? BASELINE_MORALE;
+  state.staffMorale[staffId] = Math.min(100, before + gain);
+  state.staffTalked[staffId] = { ...state.staffTalked[staffId], [action.id]: absoluteMinute(state) };
+  const reply = pickLine(state, STAFF_LINES[staffId][key]);
+  awardStoreExperience(state, 2);
+  pushEvent(state, 'owner', `You spoke with ${person.name.split(' ')[0]}.`, action.cost ? `${money(action.cost)} bonus · “${reply}”` : `“${reply}”`);
+  return { ok: true, reply, action: action.id, morale: state.staffMorale[staffId], gained: state.staffMorale[staffId] - before };
+}
+
+// ——— the owner at the tables ———
+
+const waited = (state, customer) => state.minute - (customer.arrivedAt ?? state.minute);
+const seated = (customer) => customer.phase === 'browsing' && (customer.arrivalTimer ?? 0) <= 0;
+const unhappyWith = (customer) => Number.isFinite(customer.foodQuality) && (customer.foodQuality < 65 || customer.serviceQuality < 65);
+const pickLine = (state, lines) => lines[Math.floor(state.random() * lines.length)];
+
+/**
+ * What the owner can say to a guest. `when` says which guests it suits and `rapport` is how much it warms them to the
+ * cafe (it lifts their review's rating and the chance they write one). Each can be used once per guest. Some cost
+ * something: a coffee refill uses a portion of coffee, taking the meal off the bill gives up the sale.
+ */
+export const OWNER_ACTIONS = [
+  { id: 'greet', label: 'Say hello', hint: 'A friendly word while they wait.', rapport: 5,
+    when: (state, c) => seated(c) && c.serviceStatus !== 'served' },
+  { id: 'hurry', label: 'Check on their order', hint: 'Apologize for the wait. They will count it less against you.', rapport: 7,
+    when: (state, c) => seated(c) && c.serviceStatus !== 'served' && waited(state, c) >= 3 },
+  { id: 'checkin', label: 'Ask how the meal is', hint: 'Listen, especially if something is off.', rapport: 4,
+    when: (state, c) => seated(c) && c.serviceStatus === 'served' },
+  { id: 'refill', label: 'Top up their coffee', hint: 'Free for regulars. Uses a portion of coffee.', rapport: 5,
+    when: (state, c) => seated(c) && c.serviceStatus === 'served' && qtyOf((state.pantry.coffee ?? []).filter((lot) => !isExpired(lot, productNow(state)))) >= 1 },
+  { id: 'comp', label: 'Take it off the bill', hint: 'Their meal is on the house. You give up the sale.', rapport: 20,
+    when: (state, c) => seated(c) && c.serviceStatus === 'served' && !c.comped },
+  { id: 'thank', label: 'Thank them on the way out', hint: 'A word at the register.', rapport: 4,
+    when: (state, c) => c.phase === 'checkout' },
+];
+
+/** How a guest is getting on, in a few words, for the owner to read before stepping in. */
+export function guestMood(state, customer) {
+  if (customer.phase === 'checkout' || customer.phase === 'leaving') return customer.rapport > 0 ? 'Heading out happy' : 'Paying up';
+  if (!seated(customer)) return 'Just arriving';
+  if (customer.serviceStatus !== 'served') return waited(state, customer) >= 5 ? 'Getting impatient' : customer.orderedMenuId ? 'Waiting for their meal' : 'Looking at the menu';
+  return unhappyWith(customer) ? 'Not happy with the meal' : 'Enjoying breakfast';
+}
+
+/** The things the owner can do for this guest right now. */
+export function ownerActionsFor(state, customer) {
+  if (!customer) return [];
+  return OWNER_ACTIONS.filter((action) => !customer.talked?.[action.id] && action.when(state, customer))
+    .map(({ id, label, hint }) => ({ id, label, hint }));
+}
+
+const GUEST_LINES = {
+  greet: ['Thanks! It smells wonderful in here.', 'Good to see you. Is the coffee as good as it smells?', 'Oh, hello. We have been meaning to come in for ages.', 'Thank you. Everyone has been lovely.'],
+  hurry: ['Thanks for checking. We are in no rush, honestly.', 'I appreciate you asking. It has been a little while.', 'Oh, that is kind of you. We are happy to wait.'],
+  checkinHappy: ['It is great, thank you. Exactly what I wanted.', 'Lovely. The eggs are perfect.', 'Really good. Tell Bob well done.'],
+  checkinUnhappy: ['Honestly, it is not quite right. A bit of a let-down.', 'It is okay, but not as good as I hoped, and it took a while.', 'Since you ask, it has not been our best visit.'],
+  refill: ['Oh, perfect, thank you.', 'You are a lifesaver. I was just about to ask.', 'Now that is service.'],
+  comp: ['Oh, you do not have to do that. Thank you, truly.', 'That is really generous. We will be back, I promise.', 'Well, that is a kind thing to do. Thank you.'],
+  thank: ['Thanks for having us. See you soon.', 'We will be back. Lovely morning.', 'Take care. The booth was perfect.'],
+};
+
+/**
+ * The owner speaks to a guest. Returns { ok, reply, action } where `reply` is what the guest says back, or
+ * { ok: false, reason } if the guest is not there or the action does not suit them now.
+ */
+export function talkToGuest(state, customerId, actionId) {
+  const customer = state.customers.find((entry) => entry.id === customerId);
+  const action = OWNER_ACTIONS.find((entry) => entry.id === actionId);
+  if (!customer || !action) return { ok: false, reason: 'unknown' };
+  if (customer.talked?.[action.id]) return { ok: false, reason: 'already' };
+  if (!action.when(state, customer)) return { ok: false, reason: 'not-now' };
+  const unhappy = unhappyWith(customer);
+  customer.talked = { ...customer.talked, [action.id]: true };
+  let rapport = action.rapport;
+  let detail = '';
+  if (action.id === 'hurry') customer.waitCredit = (customer.waitCredit ?? 0) + 3;
+  if (action.id === 'checkin' && unhappy) { rapport = 10; customer.heard = true; detail = 'They said what was wrong, and you listened.'; }
+  if (action.id === 'refill') {
+    const lots = sortOldestFirst(state.pantry.coffee ?? []);
+    const lot = lots.find((entry) => entry.qty > 0 && !isExpired(entry, productNow(state)));
+    lot.qty -= 1;
+    state.pantry.coffee = lots.filter((entry) => entry.qty > 0);
+    state.dayStats.waste += lot.unitCost;
+    detail = 'A coffee on the house.';
+  }
+  if (action.id === 'comp') { customer.comped = true; detail = 'The meal is on the house.'; }
+  customer.rapport = Math.min(40, (customer.rapport ?? 0) + rapport);
+  const reply = pickLine(state, action.id === 'checkin' ? GUEST_LINES[unhappy ? 'checkinUnhappy' : 'checkinHappy'] : GUEST_LINES[action.id]);
+  awardStoreExperience(state, 3);
+  pushEvent(state, 'owner', `You ${action.label.toLowerCase()} · ${customer.name}.`, detail || `“${reply}”`);
+  return { ok: true, reply, action: action.id, detail, rapport: customer.rapport };
+}
+
 /** Real frame time adjusted to the store's selected speed; zero while closed or paused. */
 export function activeFrameDelta(state, realSeconds) {
   if (!state.started || state.paused || state.dayEnded || state.gameOver
@@ -747,9 +1024,10 @@ export function advanceGame(state, deltaMinutes) {
     state.minute += step;
     remaining -= step;
     advanceCustomerPhases(state, step);
+    driftMorale(state, step);
     advanceWaiterService(state, step);
     if (state.minute >= state.nextArrival && state.minute < LAST_CALL) {
-      spawnCustomer(state);
+      spawnParty(state);
       state.nextArrival = state.minute + customerArrivalInterval(state);
     }
     if (state.reputation <= 0) { endDay(state); state.gameOver = true; break; }
@@ -766,7 +1044,7 @@ export function beginDay(state) {
   if (state.started || state.gameOver) return false;
   state.started = true;
   state.paused = false;
-  state.nextArrival = state.minute + (10 + state.random() * 14) / trafficMultiplier(state);
+  state.nextArrival = state.minute + (8 + state.random() * 12) / trafficMultiplier(state);
   pushEvent(state, 'good', 'The cafe is open.', 'First customer should be along shortly.');
   return true;
 }

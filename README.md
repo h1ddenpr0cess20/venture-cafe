@@ -4,16 +4,16 @@ A neighborhood breakfast-cafe management game built on [Madness Engine](https://
 
 ## The cafe
 
-- **A dining room in walnut.** Four two-top tables with turned legs, eight dining chairs, two booths with cushioned benches, four counter stools, a paneled service bar with a brass foot rail, and a backbar of three tall bookcases holding cups, jars and tins. Tables, chairs and stools are the engine's `props/wood-table` and `props/wood-chair`; the bar, benches and backbar use the same lacquered walnut (`props/wood-board`, `props/bookcase`).
+- **A dining room in walnut.** Four square four-person tables with turned legs, two booths with a cushioned bench on each side, four counter stools, a paneled service bar with a brass foot rail, and a backbar of three tall bookcases holding cups, jars and tins. Tables, chairs and stools are the engine's `props/wood-table` and `props/wood-chair`; the bar, benches and backbar use the same lacquered walnut (`props/wood-board`, `props/bookcase`).
 - **Real people.** The crew, the owner you walk around as, and fifteen regulars are all built with the engine's `createHuman`: MakeHuman-based bodies in their own build, height, skin, hair, eyes and clothes. Guests sit down with the engine's `sit` clip onto the wood chairs. The crew and the first four regulars are built behind the loading screen; the rest are built while the cafe is open, and only the ones who are ready come in.
 - **A kitchen on the line.** Bob cooks at a marble-topped prep counter with a cast-iron pan and a cutting board; the pass has an open shelf above it.
 
 ## How a morning works
 
-1. A regular walks in off the sidewalk and sits at the quietest table.
-2. The waiter takes the order and sends it to Bob's kitchen.
+1. A party of one to four regulars walks in off the sidewalk and sits together: singles lean toward the bar, pairs toward tables and booths, bigger groups take a table. A table or booth is one party's; strangers only share the bar.
+2. The waiter takes the table's orders in one visit and sends them to Bob's kitchen.
 3. Bob cooks it from the walk-in, **oldest valid lot first**. A lot's expiry is fixed when it is delivered. Expired stock is never cooked.
-4. The waiter serves it. The guest pays at the menu price and leaves a review.
+4. The waiter serves the table. Each guest pays at the menu price and leaves a review. Meals are set down in front of whoever is eating, at the table or on the bar.
 
 **Food quality** comes from kitchen skill, ingredient freshness and how much of the recipe was in stock. **Service quality** comes from the host and waiter and a wait-time penalty. Reviews score the two separately, and reputation sets how often people walk in.
 
