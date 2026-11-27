@@ -1,37 +1,25 @@
 import './style.css';
 import { createAudio } from 'madness-engine/audio';
 import {
-  PRODUCTS, PRODUCT_BY_ID, STAFF, createGameState, money, productNow, activeFrameDelta,
-  availableProducts, buyFixture, placeFixture,
-  shelfQuantity, stockroomQuantity, expiredQuantity, oldestShelfBatch, isAvailable,
-  restockProduct, restockAll, placeOrder, pullExpired, adjustPrice, borrowCredit,
-  repayCredit, advanceGame, beginDay, togglePause, startNextDay, saveGameState, loadGameState,
-  trafficLabel, reviewSummary,
+  INGREDIENTS, INGREDIENT_BY_ID, STAFF, createGameState, money, productNow, activeFrameDelta,
+  openIngredients, isOpen, getStoreLevel, getStoreLevelProgress, pantryQuantity, expiredQuantity, oldestLot, recipeCost,
+  isExpired, qtyOf, pullExpired, adjustMenuPrice, placeOrder, borrowCredit, repayCredit, advanceGame, beginDay,
+  togglePause, startNextDay, saveGameState, loadGameState, trafficLabel, reviewSummary, pantryHealth,
 } from './sim.js';
-import '@fontsource/playfair-display/600.css';
-import '@fontsource/playfair-display/700.css';
-import '@fontsource/oswald/400.css';
-import '@fontsource/oswald/500.css';
-import '@fontsource/oswald/600.css';
-import '@fontsource/caveat/600.css';
 import { createVentureCafeWorld } from './world.js';
 import { CAFE_MENU } from './menu.js';
-import { LOCAL_PRODUCTS, CAFE_TABLES, CAFE_BOOTHS, CAFE_BAR_STOOLS, CAFE_SEATS } from './layout.js';
-
-const CAFE_INGREDIENT_IDS = [...new Set(CAFE_MENU.flatMap((item) => Object.keys(item.ingredients ?? {})))];
+import { CAFE_TABLES, CAFE_BOOTHS, CAFE_BAR_STOOLS, CAFE_SEATS } from './layout.js';
 
 const $ = (selector) => document.querySelector(selector);
 const panel = $('#panel-content');
-const SAVE_KEY = 'venture-cafe.breakfast.save.v1';
+const SAVE_KEY = 'venture-cafe.save.v2';
 let state;
 try { state = loadGameState(window.localStorage.getItem(SAVE_KEY)); } catch { state = null; }
 state ??= createGameState();
-state.orderCases ??= Object.fromEntries(PRODUCTS.map((p) => [p.id, 1]));
 window.__ventureCafeState = state;
 
 let currentTab = 'overview';
-let selectedProduct = 'eggs';
-let selectedPiece = null;
+let selectedIngredient = 'eggs';
 let stockFilter = 'All';
 let stockSearch = '';
 let audioMuted = false;
@@ -52,41 +40,12 @@ function updateLoading(label, progress) {
 
 const audio = createAudio({ storageKey: 'venture-cafe.muted', glue: true });
 audioMuted = audio.muted;
-updateLoading('Warming the cafe and preparing the dining room', 0);
+updateLoading('Starting up', 0);
 let world;
 try {
   world = await createVentureCafeWorld($('#world'), updateLoading);
   world.setState(state);
-  const WHY = {
-    out: 'That is outside the shop, or too close to a wall.', wall: 'Shelves and bins need space round them to reach both sides. Only coolers go against a wall.',
-    blocked: 'Something is in the way there.', 'needs-wall': 'A cooler has to stand flat against a wall.',
-    door: 'That would shut off the door, the till or a shelf. Leave a way through.',
-  };
-  world.placement.onPlace = (pieceId, spot) => {
-    const result = placeFixture(state, pieceId, spot);
-    if (result.ok) { notify('Moved. Guests and staff will use the updated layout.', 'good'); renderPanel({ preserveScroll: true }); return true; }
-    notify(WHY[result.reason] ?? 'It cannot go there.', 'danger');
-    return false;
-  };
-  world.placement.onCancel = () => renderPanel({ preserveScroll: true });
-  // Clicking a kitchen fixture selects it; clicking again or pressing M picks it up.
-  world.selection.onSelect = (id) => {
-    selectedPiece = id;
-    if (id) {
-      const matchingIngredient = LOCAL_PRODUCTS(id).find((productId) => CAFE_INGREDIENT_IDS.includes(productId));
-      if (matchingIngredient) { selectedProduct = matchingIngredient; currentTab = 'shelves'; }
-      else currentTab = 'floor';
-    }
-    renderPanel({ preserveScroll: !id });
-  };
-  world.selection.onPickUp = (id) => {
-    if (world.placement.active) return;
-    selectedPiece = id;
-    world.placement.start(id, state);
-    notify('Click the floor to place the fixture. R turns it, Esc cancels.', 'info');
-    renderPanel({ preserveScroll: true });
-  };
-  updateLoading('Everything is ready. Welcome to the block.', 100);
+  updateLoading('Ready', 100);
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   $('#loading-overlay')?.classList.add('loading-finished');
   await new Promise((resolve) => setTimeout(resolve, 260));
@@ -111,7 +70,7 @@ function fmtClock(minute) {
 }
 
 function expiryCopy(batch) {
-  if (!batch) return 'NO BATCH ON SHELF';
+  if (!batch) return 'NONE IN STOCK';
   const left = batch.expiresAt - productNow(state);
   if (left <= 0) return 'EXPIRED · PULL NOW';
   if (left < 1) return `EXPIRES TODAY · ${Math.max(1, Math.ceil(left * 24))}H LEFT`;
@@ -129,7 +88,7 @@ function notify(message, kind = 'info') {
   const stack = $('#toast-stack');
   const toast = document.createElement('div');
   toast.className = `toast toast-${kind}`;
-  toast.innerHTML = `<span class="toast-icon">${kind === 'danger' ? '!' : kind === 'good' ? '✓' : '✳'}</span><span>${escapeHtml(message)}</span>`;
+  toast.innerHTML = `<span class="toast-icon">${kind === 'danger' ? '!' : kind === 'good' ? '✓' : 'i'}</span><span>${escapeHtml(message)}</span>`;
   stack.appendChild(toast);
   requestAnimationFrame(() => toast.classList.add('visible'));
   setTimeout(() => {
@@ -150,7 +109,7 @@ function recordNewEvents() {
     else if (event.type === 'staff' && (event.message.includes('served '))) notify(event.message, 'good');
     else if (event.type === 'review') {
       const rating = Number(event.message.match(/(\d)-star/)?.[1] ?? 3);
-      notify(`New neighborhood review · ${rating} stars`, rating <= 2 ? 'danger' : rating === 5 ? 'good' : 'info');
+      notify(`New review · ${rating} stars`, rating <= 2 ? 'danger' : rating === 5 ? 'good' : 'info');
       renderReviewFeed();
       if (currentTab === 'reviews') renderPanel({ preserveScroll: true });
     }
@@ -165,42 +124,38 @@ function updateHeader() {
   $('#revenue-value').textContent = money(state.dayStats.revenue);
   $('#rep-value').textContent = Math.round(state.reputation);
   $('#rep-meter').style.width = `${state.reputation}%`;
-  $('#day-label').textContent = `DAY ${String(state.day).padStart(2, '0')}`;
+  $('#day-label').textContent = `Day ${state.day}`;
   $('#clock-value').textContent = fmtClock(state.minute);
-  const status = !state.started ? 'SHUTTERS DOWN' : state.dayEnded ? 'CLOSED FOR THE DAY' : state.paused ? 'PAUSED' : 'SHUTTERS UP';
+  const status = !state.started ? 'Closed' : state.dayEnded ? 'Closed for the day' : state.paused ? 'Paused' : 'Open';
   $('#shop-status').textContent = status;
   $('#open-pill').classList.toggle('is-open', state.started && !state.dayEnded);
-  $('#open-pill').querySelector('span').textContent = state.dayEnded ? 'CLOSED' : state.paused ? (state.started ? 'PAUSED' : 'CLOSED') : 'OPEN';
+  $('#open-pill').querySelector('span').textContent = state.dayEnded ? 'Closed' : state.paused ? (state.started ? 'Paused' : 'Closed') : 'Open';
   $('#pause-toggle').textContent = state.paused ? '▶' : 'Ⅱ';
-  $('#pause-toggle').title = state.paused ? 'Resume simulation' : 'Pause simulation';
-  $('#foot-customers').textContent = `${state.customers.length} DINERS IN THE CAFE`;
-  $('#foot-traffic').textContent = `BREAKFAST TRAFFIC ${trafficLabel(state)}`;
+  $('#pause-toggle').title = state.paused ? 'Resume' : 'Pause';
+  $('#foot-customers').textContent = `${state.customers.length} ${state.customers.length === 1 ? 'diner' : 'diners'}`;
+  $('#foot-traffic').textContent = `Traffic ${trafficLabel(state).toLowerCase()}`;
   const waiterTask = state.waiterWork ?? { stage: 'idle' };
   const waitingTables = state.customers.filter((customer) => customer.serviceStatus !== 'served').length;
-  const waiterLabel = waiterTask.stage === 'taking-order' ? 'WAITER TAKING AN ORDER'
-    : waiterTask.stage === 'preparing-order' ? 'KITCHEN PREPARING A MEAL'
-      : ['walking-to-delivery', 'presenting'].includes(waiterTask.stage) ? 'WAITER DELIVERING BREAKFAST'
-        : ['walking-to-table', 'returning-to-kitchen'].includes(waiterTask.stage) ? 'WAITER ON THE FLOOR' : null;
-  $('#foot-staff').textContent = waiterLabel ?? (waitingTables ? `${waitingTables} ORDERS IN SERVICE` : `${STAFF.length} CAFE CREW ON SHIFT`);
-  const ingredientAlerts = CAFE_INGREDIENT_IDS.filter((id) => expiredQuantity(state, id) > 0 || shelfQuantity(state, id) === 0).length;
-  const alertCount = ingredientAlerts;
-  const expiredUnits = CAFE_INGREDIENT_IDS.reduce((sum, id) => sum + expiredQuantity(state, id), 0);
+  const waiterLabel = waiterTask.stage === 'taking-order' ? 'Waiter taking an order'
+    : waiterTask.stage === 'preparing-order' ? 'Kitchen cooking'
+      : ['walking-to-delivery', 'presenting'].includes(waiterTask.stage) ? 'Waiter serving'
+        : ['walking-to-table', 'returning-to-kitchen'].includes(waiterTask.stage) ? 'Waiter on the floor' : null;
+  $('#foot-staff').textContent = waiterLabel ?? (waitingTables ? `${waitingTables} ${waitingTables === 1 ? 'order' : 'orders'} in service` : `${STAFF.length} crew on shift`);
+  const health = pantryHealth(state);
+  const alertCount = health.expired ? health.empty + health.low + 1 : health.empty + health.low;
+  const expiredUnits = health.expired;
   $('#shelf-alert-count').textContent = alertCount;
   $('#shelf-alert-count').classList.toggle('hidden', alertCount === 0);
-  $('#bottom-message').textContent = state.dayStats.complaints
-    ? `${state.dayStats.complaints} unhappy customer${state.dayStats.complaints === 1 ? '' : 's'} today. Check the dates.`
-    : expiredUnits ? `${expiredUnits} expired units need to come off the shelf.`
-      : 'Fresh breakfast. Good coffee. Good people.';
   $('#start-overlay').classList.toggle('hidden', state.started);
   $('#player-controls')?.classList.toggle('hidden', !state.started || state.paused || state.dayEnded || state.gameOver);
   $('#pause-toggle').disabled = !state.started || state.dayEnded;
-  $('#sound-toggle').textContent = audioMuted ? '♫̸' : '♫';
+  $('#sound-toggle').textContent = audioMuted ? '♪̸' : '♪';
   $('#sound-toggle').classList.toggle('muted', audioMuted);
   document.querySelectorAll('[data-speed]').forEach((button) => button.classList.toggle('active', Number(button.dataset.speed) === state.speed));
 }
 
 function eventIcon(type) {
-  return ({ sale: '↗', customer: '♙', danger: '!', warning: '△', order: '▣', stock: '↔', staff: '↻', level: '↑', waste: '×', finance: '$', close: '▣', good: '✓', note: '✳', review: '★', })[type] ?? '·';
+  return ({ sale: '+', customer: '•', danger: '!', warning: '!', order: '•', stock: '•', staff: '•', level: '↑', waste: '×', finance: '$', close: '•', good: '✓', note: '•', review: '★' })[type] ?? '•';
 }
 function renderActivity(limit = 6) {
   return `<div class="activity-list">${state.events.slice(0, limit).map((event) => `
@@ -229,11 +184,11 @@ function reviewMarkup() {
   return `
     <div class="review-reputation">
       <div class="review-scoreline"><strong>${summary.rating.toFixed(1)}</strong><span class="review-stars">${'★'.repeat(Math.round(summary.rating))}<i>${'☆'.repeat(5 - Math.round(summary.rating))}</i></span></div>
-      <div class="review-score-copy"><b>${summary.count} cafe reviews</b><span>${Math.round(state.reputation)} / 100 neighborhood trust</span></div>
+      <div class="review-score-copy"><b>${summary.count} cafe reviews</b><span>${Math.round(state.reputation)} / 100 reputation</span></div>
       <div class="rating-distribution">${distribution.map((row) => `<div class="rating-bar"><span>${row.rating}</span><i><b style="width:${row.count / total * 100}%"></b></i><small>${row.count}</small></div>`).join('')}</div>
     </div>
-    <div class="review-footfall"><span><i class="live-dot"></i> ESTIMATED DINER TRAFFIC</span><strong class="traffic-${trafficLabel(state).toLowerCase()}">${trafficLabel(state)}</strong><small>${state.reputation >= 86 ? 'The block is talking you up.' : state.reputation >= 68 ? 'Regular neighborhood traffic.' : state.reputation >= 45 ? 'Fewer walk-ins than usual.' : 'Word of mouth is keeping people away.'}</small></div>
-    <div class="review-feed-heading"><span>RECENT DINER REVIEWS</span><small>NEWEST FIRST</small></div>
+    <div class="review-footfall"><span><i class="live-dot"></i> Foot traffic</span><strong class="traffic-${trafficLabel(state).toLowerCase()}">${trafficLabel(state)}</strong><small>${state.reputation >= 86 ? 'Guests are recommending the cafe.' : state.reputation >= 68 ? 'A normal number of walk-ins.' : state.reputation >= 45 ? 'Fewer walk-ins than usual.' : 'Word of mouth is keeping people away.'}</small></div>
+    <div class="review-feed-heading"><span>Recent reviews</span><small>Newest first</small></div>
     <div class="review-stream">${reviews.map((review) => {
       const initials = review.name.split(/\s+/).map((part) => part[0]).slice(0, 2).join('').toUpperCase();
       const isNew = recent && review.id === recent.id && review.id > previousReviewSequence;
@@ -248,7 +203,7 @@ function reviewMarkup() {
         ${Number.isFinite(review.foodQuality) && Number.isFinite(review.serviceQuality) ? `<div class="review-quality"><span>FOOD <b>${review.foodQuality}/100</b></span><span>SERVICE <b>${review.serviceQuality}/100</b></span></div>` : ''}
         ${review.outcome === 'food-poor' ? '<div class="review-response-note">Kitchen quality was the main issue on this visit.</div>' : review.outcome === 'service-poor' ? '<div class="review-response-note">Table service was the main issue on this visit.</div>' : ''}
       </article>`;
-    }).join('') || '<div class="empty-state compact">No reviews yet. Serve a few breakfasts and see what the neighborhood thinks.</div>'}</div>
+    }).join('') || '<div class="empty-state compact">No reviews yet. They appear after guests are served.</div>'}</div>
   `;
 }
 
@@ -266,19 +221,36 @@ function reviewsPanel() {
   return `<div class="review-mobile-page">${reviewMarkup()}</div>`;
 }
 
-function productFlag(product) {
-  const batch = oldestShelfBatch(state, product.id);
-  const left = batch ? batch.expiresAt - productNow(state) : Infinity;
-  if (expiredQuantity(state, product.id)) return '<span class="tag tag-danger">EXPIRED</span>';
-  if (shelfQuantity(state, product.id) === 0) return '<span class="tag tag-muted">EMPTY</span>';
+function ingredientFlag(ingredient) {
+  const lot = oldestLot(state, ingredient.id);
+  const left = lot ? lot.expiresAt - productNow(state) : Infinity;
+  const good = pantryQuantity(state, ingredient.id) - expiredQuantity(state, ingredient.id);
+  if (expiredQuantity(state, ingredient.id)) return '<span class="tag tag-danger">EXPIRED</span>';
+  if (good <= 0) return '<span class="tag tag-muted">OUT</span>';
   if (left < 2) return '<span class="tag tag-warning">DATE CHECK</span>';
-  if (shelfQuantity(state, product.id) <= 2) return '<span class="tag tag-warning">LOW</span>';
-  return '<span class="tag tag-good">IN KITCHEN</span>';
+  if (good < ingredient.caseSize * 0.25) return '<span class="tag tag-warning">LOW</span>';
+  return '<span class="tag tag-good">STOCKED</span>';
+}
+
+/** How many dishes of this kind the walk-in could still cook, given the ingredient that runs out first. */
+function dishesLeft(item) {
+  const now = productNow(state);
+  return Math.min(...Object.entries(item.ingredients).map(([id, need]) => Math.floor(qtyOf(state.pantry[id].filter((lot) => !isExpired(lot, now))) / need)));
+}
+
+function levelCard() {
+  const progress = getStoreLevelProgress(state);
+  const next = CAFE_MENU.filter((item) => item.level === progress.level + 1).map((item) => item.name);
+  return `<div class="level-card">
+    <div class="level-card-top"><span>CAFE LEVEL</span><strong>${progress.level}</strong></div>
+    <div class="debt-meter level-meter"><i style="width:${progress.progress}%"></i></div>
+    <small>${progress.remaining} XP to level ${progress.level + 1}${next.length ? ` · adds ${escapeHtml(next.join(' and '))}` : ''}</small>
+  </div>`;
 }
 
 function overviewPanel() {
-  const ingredients = CAFE_INGREDIENT_IDS.map((id) => PRODUCT_BY_ID[id]).filter(Boolean);
-  const urgent = ingredients.filter((product) => expiredQuantity(state, product.id) || shelfQuantity(state, product.id) <= 1).slice(0, 5);
+  const ingredients = openIngredients(state);
+  const urgent = ingredients.filter((ingredient) => expiredQuantity(state, ingredient.id) || pantryQuantity(state, ingredient.id) < ingredient.caseSize * 0.25).slice(0, 5);
   const active = state.customers.length;
   const ordersWaiting = state.customers.filter((customer) => customer.serviceStatus !== 'served').length;
   const served = state.dayStats.ordersServed ?? 0;
@@ -287,7 +259,7 @@ function overviewPanel() {
   const grossMargin = state.dayStats.revenue > 0 ? Math.round((state.dayStats.grossProfit / state.dayStats.revenue) * 100) : 0;
   return `
     <div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">THE DAILY CAFE REPORT</div><h3>Today's service</h3></div><span class="subtle">DAY ${state.day}</span></div>
+      <div class="section-heading"><div><div class="eyebrow">Today</div><h3>Today's service</h3></div><span class="subtle">DAY ${state.day}</span></div>
       <div class="metric-grid">
         <div class="metric-card"><span>SALES</span><strong>${money(state.dayStats.revenue)}</strong><small>${served} meals served · ${grossMargin}% gross margin</small></div>
         <div class="metric-card"><span>DINER COVERS</span><strong>${state.dayStats.customers}</strong><small>${active} currently in the dining room</small></div>
@@ -295,94 +267,93 @@ function overviewPanel() {
         <div class="metric-card"><span>SERVICE QUALITY</span><strong>${served ? serviceQuality + '/100' : '—'}</strong><small>Order-taking, wait time and table service</small></div>
       </div>
       <div class="service-queue"><span>${ordersWaiting} ORDERS IN SERVICE</span><small>Guests are seated first, then the waiter takes the order and sends it to the kitchen.</small></div>
+      ${levelCard()}
     </div>
     <div class="panel-section">
       <div class="section-heading"><div><div class="eyebrow">KITCHEN CHECK</div><h3>Ingredients to watch</h3></div><span class="subtle">${urgent.length} NEED ATTENTION</span></div>
-      ${urgent.length ? `<div class="attention-list">${urgent.map((product) => {
-        const expired = expiredQuantity(state, product.id);
-        return `<button class="attention-row" data-action="select-product" data-product="${product.id}"><span class="attention-mark ${expired ? 'mark-danger' : 'mark-warning'}">${expired ? '!' : '◷'}</span><span><strong>${escapeHtml(product.short)}</strong><small>${expired ? 'Expired stock · pull before prep' : `${shelfQuantity(state, product.id)} units on hand`}</small></span><b>→</b></button>`;
-      }).join('')}</div>` : '<div class="empty-state compact"><span class="empty-mark">✓</span><strong>Kitchen stock is in good shape.</strong><p>Keep rotating the oldest fresh ingredients first.</p></div>'}
-      <div class="action-pair"><button class="secondary-button" data-action="pull-expired">PULL EXPIRED</button><button class="secondary-button" data-action="restock-all">RESTOCK KITCHEN</button></div>
+      ${urgent.length ? `<div class="attention-list">${urgent.map((ingredient) => {
+        const expired = expiredQuantity(state, ingredient.id);
+        return `<button class="attention-row" data-action="select-ingredient" data-ingredient="${ingredient.id}"><span class="attention-mark ${expired ? 'mark-danger' : 'mark-warning'}">${expired ? '!' : '◷'}</span><span><strong>${escapeHtml(ingredient.short)}</strong><small>${expired ? `${expired} expired portions` : `${pantryQuantity(state, ingredient.id)} portions left`}</small></span><span class="attention-go">›</span></button>`;
+      }).join('')}</div>` : '<div class="empty-state compact"><strong>The walk-in is in good shape.</strong><p>Keep rotating the oldest fresh ingredients first.</p></div>'}
+      <div class="action-pair"><button class="secondary-button" data-action="pull-expired">PULL EXPIRED</button><button class="secondary-button" data-action="reorder-low">REORDER LOW STOCK</button></div>
     </div>
     <div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">THE BLOCK IS TALKING</div><h3>Latest activity</h3></div><span class="subtle">LIVE</span></div>
+      <div class="section-heading"><div><div class="eyebrow">Live</div><h3>Latest activity</h3></div><span class="subtle">LIVE</span></div>
       ${renderActivity(5)}
     </div>`;
 }
 
+const FILTERS = ['All', 'Eggs', 'Dairy', 'Bakery', 'Produce', 'Drinks'];
 
-
-const FILTERS = ['All', 'Eggs', 'Produce', 'Dairy', 'Bakery', 'Dry goods', 'Drinks'];
-
+/** The menu, and the lever on each dish: its price. */
 function menuPanel() {
   const groups = ['Skillet', 'Eggs', 'Omelette', 'Bakery', 'Drinks'];
+  const level = getStoreLevel(state);
   return groups.map((category) => {
     const items = CAFE_MENU.filter((item) => item.category === category);
     if (!items.length) return '';
     return `<div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">BREAKFAST MENU</div><h3>${category}</h3></div><span class="subtle">${items.filter((item) => Object.keys(item.ingredients).every((id) => isAvailable(state, id))).length} AVAILABLE · ${items.length} ITEMS</span></div>
+      <div class="section-heading"><div><div class="eyebrow">BREAKFAST MENU</div><h3>${category}</h3></div><span class="subtle">${items.filter((item) => item.level <= level).length} ON THE MENU · ${items.length} ITEMS</span></div>
       <div class="menu-list">${items.map((item) => {
-        const unlocked = Object.keys(item.ingredients).every((id) => isAvailable(state, id));
-        return `<article class="menu-item ${unlocked ? '' : 'menu-item-locked'}">
-          <div class="menu-item-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.description)}</small><span>${escapeHtml(item.prep)} · ${unlocked ? 'AVAILABLE' : 'UNLOCKS WITH INGREDIENT RANGE'}</span></div>
-          <b>${money(item.price)}</b>
+        const open = item.level <= level;
+        const price = state.menuPrices[item.id] ?? item.price;
+        const margin = Math.round((1 - recipeCost(item) / price) * 100);
+        const left = open ? dishesLeft(item) : 0;
+        return `<article class="menu-item ${open ? '' : 'menu-item-locked'}">
+          <div class="menu-item-copy"><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.description)}</small>
+            <span>${escapeHtml(item.prep)} · ${open ? `${margin}% MARGIN · ${left} CAN BE COOKED` : `OPENS AT CAFE LEVEL ${item.level}`}</span></div>
+          ${open ? `<span class="price-stepper"><button data-action="price-down" data-dish="${item.id}" aria-label="Lower the price of ${escapeHtml(item.name)}">−</button><b class="${price > item.price ? 'text-warning' : ''}">${money(price)}</b><button data-action="price-up" data-dish="${item.id}" aria-label="Raise the price of ${escapeHtml(item.name)}">+</button></span>` : `<b>${money(item.price)}</b>`}
         </article>`;
       }).join('')}</div>
     </div>`;
-  }).join('');
+  }).join('') + '<div class="panel-section supplier-tip"><span><strong>Pricing.</strong><small>Regulars forgive a little. Past what a guest thinks a dish is worth, they pay, call the cafe pricey, and tell their neighbors.</small></span></div>';
 }
 
-function shelfPanel() {
-  const visible = availableProducts(state).filter((product) => CAFE_INGREDIENT_IDS.includes(product.id) && (stockFilter === 'All' || product.category === stockFilter)
-    && `${product.name} ${product.category}`.toLowerCase().includes(stockSearch.toLowerCase()));
-  const rows = visible.map((product) => {
-    const front = oldestShelfBatch(state, product.id);
-    const shelf = shelfQuantity(state, product.id);
-    const back = stockroomQuantity(state, product.id);
-    const expiry = expiryCopy(front);
-    return `<button class="stock-row ${product.id === selectedProduct ? 'selected' : ''}" data-action="select-product" data-product="${product.id}">
-      <span class="product-swatch" style="--swatch:${product.color}"></span>
-      <span class="stock-main"><strong>${escapeHtml(product.short)}</strong><small>${escapeHtml(product.category)} · ${expiry}</small></span>
-      <span class="stock-count"><b>${shelf}</b><small>KITCHEN</small></span>
-      <span class="stock-back"><b>${back}</b><small>DRY STORE</small></span>
+function ingredientPanel() {
+  const visible = openIngredients(state).filter((ingredient) => (stockFilter === 'All' || ingredient.category === stockFilter)
+    && `${ingredient.name} ${ingredient.category}`.toLowerCase().includes(stockSearch.toLowerCase()));
+  const rows = visible.map((ingredient) => {
+    const front = oldestLot(state, ingredient.id);
+    return `<button class="stock-row ${ingredient.id === selectedIngredient ? 'selected' : ''}" data-action="select-ingredient" data-ingredient="${ingredient.id}">
+      <span class="product-swatch" style="--swatch:${ingredient.color}"></span>
+      <span class="stock-main"><strong>${escapeHtml(ingredient.short)}</strong><small>${escapeHtml(ingredient.category)} · ${expiryCopy(front)}</small></span>
+      <span class="stock-count"><b>${pantryQuantity(state, ingredient.id)}</b><small>PORTIONS</small></span>
       <span class="stock-chevron">›</span>
     </button>`;
   }).join('');
-  const product = PRODUCT_BY_ID[selectedProduct];
-  const shelfBatches = [...state.shelves[selectedProduct]].sort((a, b) => a.expiresAt - b.expiresAt);
-  const backBatches = [...state.stockroom[selectedProduct]].sort((a, b) => a.expiresAt - b.expiresAt);
-  const front = shelfBatches[0];
-  const totalExpired = expiredQuantity(state, selectedProduct);
+  if (!isOpen(state, selectedIngredient)) selectedIngredient = 'eggs';
+  const ingredient = INGREDIENT_BY_ID[selectedIngredient];
+  const lots = [...state.pantry[selectedIngredient]].sort((a, b) => a.expiresAt - b.expiresAt);
+  const totalExpired = expiredQuantity(state, selectedIngredient);
+  const usedIn = CAFE_MENU.filter((item) => selectedIngredient in item.ingredients).map((item) => item.name);
   return `
     <div class="panel-section inventory-toolbar">
-      <div class="section-heading"><div><div class="eyebrow">KITCHEN + DRY STORE</div><h3>Ingredient stock</h3></div><span class="subtle">${availableProducts(state).length} LINES</span></div>
+      <div class="section-heading"><div><div class="eyebrow">THE WALK-IN</div><h3>Ingredient stock</h3></div><span class="subtle">${openIngredients(state).length} INGREDIENTS</span></div>
       <label class="search-box"><span>⌕</span><input id="stock-search" type="search" placeholder="Find an ingredient…" value="${escapeHtml(stockSearch)}" /></label>
       <div class="filter-row">${FILTERS.map((filter) => `<button class="filter-chip ${stockFilter === filter ? 'active' : ''}" data-action="filter-stock" data-filter="${filter}">${filter}</button>`).join('')}</div>
-      <div class="stock-list">${rows || '<div class="empty-state compact">No products match that search.</div>'}</div>
+      <div class="stock-list">${rows || '<div class="empty-state compact">No ingredients match that search.</div>'}</div>
     </div>
     <div class="panel-section product-detail">
-      <div class="section-heading"><div><div class="eyebrow">SELECTED LINE</div><h3>${escapeHtml(product.name)}</h3></div>${productFlag(product)}</div>
-      <p class="product-description">${escapeHtml(product.description)}</p>
-      <div class="detail-quantities"><div><span>IN KITCHEN</span><strong>${shelfQuantity(state, selectedProduct)}</strong></div><div><span>DRY STORE</span><strong>${stockroomQuantity(state, selectedProduct)}</strong></div><div><span>EXPIRED</span><strong class="${totalExpired ? 'text-danger' : ''}">${totalExpired}</strong></div></div>
-      <div class="fifo-heading"><span>USE-BY DATE ROTATION</span><span>OLDEST → KITCHEN</span></div>
-      <div class="batch-list">${[...shelfBatches, ...backBatches].slice(0, 5).map((batch, index) => {
-        const location = index < shelfBatches.length ? 'KITCHEN' : 'DRY STORE';
-        const isFront = location === 'SHELF' && index === 0;
-        return `<div class="batch-row"><span class="batch-position ${isFront ? 'front' : ''}">${isFront ? '01' : String(index + 1).padStart(2, '0')}</span><span class="batch-label"><strong>${isFront ? 'FRONT OF SHELF' : location}</strong><small>${batch.qty} units · received Day ${Math.max(1, Math.floor(batch.receivedAt))}</small></span><span class="batch-expiry ${expiryTone(batch)}">${expiryCopy(batch)}</span></div>`;
-      }).join('') || '<div class="empty-state compact">No lots available. Place a supplier order.</div>'}</div>
-      <div class="price-editor"><div><span>SUPPLIER COST</span><strong>${money(product.cost)} / UNIT</strong><small>Case of ${product.caseSize} · ${money(product.cost * product.caseSize)} per case</small></div></div>
-      <div class="action-pair"><button class="primary-button" data-action="restock" data-product="${selectedProduct}">RESTOCK KITCHEN ↗</button><button class="secondary-button ${totalExpired ? 'danger-button' : ''}" data-action="pull-product-expired" data-product="${selectedProduct}">PULL EXPIRED</button></div>
-      ${front ? `<div class="rotation-note"><span>↻</span> ${expiryCopy(front)} · New deliveries stay behind older stock until dates are checked.</div>` : ''}
+      <div class="section-heading"><div><div class="eyebrow">SELECTED INGREDIENT</div><h3>${escapeHtml(ingredient.name)}</h3></div>${ingredientFlag(ingredient)}</div>
+      <p class="product-description">${escapeHtml(ingredient.description)}</p>
+      <div class="detail-quantities"><div><span>IN THE WALK-IN</span><strong>${pantryQuantity(state, selectedIngredient)}</strong></div><div><span>EXPIRED</span><strong class="${totalExpired ? 'text-danger' : ''}">${totalExpired}</strong></div><div><span>SHELF LIFE</span><strong>${ingredient.shelfLife} d</strong></div></div>
+      <div class="fifo-heading"><span>USE-BY DATE ROTATION</span><span>OLDEST COOKED FIRST</span></div>
+      <div class="batch-list">${lots.slice(0, 5).map((lot, index) => {
+        const left = lot.expiresAt - productNow(state);
+        return `<div class="batch-row"><span class="batch-position ${index === 0 ? 'front' : ''}">${String(index + 1).padStart(2, '0')}</span><span class="batch-label"><strong>${index === 0 ? 'Next in the pan' : 'Behind it'}</strong><small>${lot.qty} portions · ${left <= 0 ? 'expired' : `${Math.max(1, Math.ceil(left))} days left`}</small></span><span class="tag tag-${expiryTone(lot)}">${left <= 0 ? 'EXPIRED' : left < 2 ? 'SOON' : 'FRESH'}</span></div>`;
+      }).join('') || '<div class="empty-state compact">None in the walk-in. Place a supplier order.</div>'}</div>
+      <div class="price-editor"><div><span>SUPPLIER COST</span><strong>${money(ingredient.cost)} / PORTION</strong><small>Case of ${ingredient.caseSize} · ${money(ingredient.cost * ingredient.caseSize)} · used in ${escapeHtml(usedIn.join(', '))}</small></div></div>
+      <div class="action-pair"><button class="primary-button" data-action="place-order" data-ingredient="${selectedIngredient}">Order a case</button><button class="secondary-button ${totalExpired ? 'danger-button' : ''}" data-action="pull-ingredient-expired" data-ingredient="${selectedIngredient}">PULL EXPIRED</button></div>
     </div>`;
 }
 
-/** The range: which tiers the store's level has opened and the shelves, bins and coolers to buy for their lines. */
-function expansionPanel() {
+/** The dining room: how many seats are taken, and the cafe's furniture. */
+function diningPanel() {
   const occupied = new Set(state.customers.map((customer) => customer.seatId).filter(Boolean));
   const seatingRow = (label, seats) => {
     const taken = seats.filter((seat) => occupied.has(seat.id)).length;
     return `<div class="order-row">
-      <span class="product-swatch" style="--swatch:#63816c"></span>
+      <span class="product-swatch" style="--swatch:#8a5a35"></span>
       <span class="order-product"><strong>${escapeHtml(label)}</strong><small>${seats.length - taken} available · ${taken} occupied</small></span>
       <span class="order-controls"><strong>${taken}/${seats.length}</strong></span>
     </div>`;
@@ -397,8 +368,8 @@ function expansionPanel() {
     <div class="panel-section">
       <div class="section-heading"><div><div class="eyebrow">DINING ROOM</div><h3>Guest seating</h3></div><span class="subtle">${diningSeats.length} SEATS</span></div>
       <div class="metric-grid">
-        <div class="metric-card"><span>TABLES</span><strong>${CAFE_TABLES.length}</strong><small>Four two-person tables</small></div>
-        <div class="metric-card"><span>BOOTH BENCHES</span><strong>${CAFE_BOOTHS.length}</strong><small>Two upholstered booths</small></div>
+        <div class="metric-card"><span>TABLES</span><strong>${CAFE_TABLES.length}</strong><small>Walnut two-tops with turned legs</small></div>
+        <div class="metric-card"><span>BOOTHS</span><strong>${CAFE_BOOTHS.length}</strong><small>Walnut benches, green cushions</small></div>
         <div class="metric-card"><span>OCCUPIED</span><strong>${occupiedCount}</strong><small>${diningSeats.length - occupiedCount} seats available</small></div>
         <div class="metric-card"><span>COUNTER STOOLS</span><strong>${CAFE_BAR_STOOLS.length}</strong><small>Perch seating along the service bar</small></div>
       </div>
@@ -406,39 +377,36 @@ function expansionPanel() {
     <div class="panel-section">
       <div class="section-heading"><div><div class="eyebrow">TABLE SERVICE</div><h3>Seating by area</h3></div></div>
       <div class="order-category"><div class="order-category-title">TABLES<span>${CAFE_TABLES.length} AREAS</span></div>${tableRows}</div>
-      <div class="order-category"><div class="order-category-title">BOOTH BENCHES<span>${CAFE_BOOTHS.length} AREAS</span></div>${boothRows}</div>
+      <div class="order-category"><div class="order-category-title">BOOTHS<span>${CAFE_BOOTHS.length} AREAS</span></div>${boothRows}</div>
     </div>
-    <div class="panel-section supplier-tip"><span class="tip-mark">✳</span><span><strong>THE SERVICE SEQUENCE.</strong><small>Guests are seated first. The waiter takes the order, Bob prepares the meal, and the waiter brings it to the table.</small></span></div>`;
+    <div class="panel-section supplier-tip"><span><strong>How service works.</strong><small>Guests are seated first. The waiter takes the order, Bob prepares the meal, and the waiter brings it to the table.</small></span></div>`;
 }
 
-
-
-
 function ordersPanel() {
-  const products = availableProducts(state).filter((product) => CAFE_INGREDIENT_IDS.includes(product.id));
-  const categories = [...new Set(products.map((product) => product.category))];
+  const open = openIngredients(state);
+  const locked = INGREDIENTS.filter((ingredient) => !isOpen(state, ingredient));
+  const categories = [...new Set(open.map((ingredient) => ingredient.category))];
   const grouped = categories.map((category) => {
-    const lines = products.filter((product) => product.category === category);
-    return `<div class="order-category"><div class="order-category-title">${escapeHtml(category)}<span>${lines.length} LINES</span></div>${lines.map((product) => {
-      const cases = state.orderCases[product.id] || 1;
-      const total = product.cost * product.caseSize * cases;
-      const shelf = shelfQuantity(state, product.id);
-      const back = stockroomQuantity(state, product.id);
+    const lines = open.filter((ingredient) => ingredient.category === category);
+    return `<div class="order-category"><div class="order-category-title">${escapeHtml(category)}<span>${lines.length} ${lines.length === 1 ? 'INGREDIENT' : 'INGREDIENTS'}</span></div>${lines.map((ingredient) => {
+      const cases = state.orderCases[ingredient.id] || 1;
+      const total = ingredient.cost * ingredient.caseSize * cases;
       return `<div class="order-row">
-        <span class="product-swatch" style="--swatch:${product.color}"></span>
-        <span class="order-product"><strong>${escapeHtml(product.short)}</strong><small>${product.caseSize} / case · ${money(product.cost)} each</small><small>${shelf} kitchen · ${back} dry store</small></span>
-        <span class="order-controls"><span class="case-stepper"><button data-action="case-down" data-product="${product.id}">−</button><b>${cases}</b><button data-action="case-up" data-product="${product.id}">+</button></span><strong>${money(total)}</strong><button class="mini-order-button" data-action="place-order" data-product="${product.id}">ADD</button></span>
+        <span class="product-swatch" style="--swatch:${ingredient.color}"></span>
+        <span class="order-product"><strong>${escapeHtml(ingredient.short)}</strong><small>${ingredient.caseSize} per case · ${money(ingredient.cost)} each</small><small>${pantryQuantity(state, ingredient.id)} in the walk-in</small></span>
+        <span class="order-controls"><span class="case-stepper"><button data-action="case-down" data-ingredient="${ingredient.id}" aria-label="Fewer cases of ${escapeHtml(ingredient.short)}">−</button><b>${cases}</b><button data-action="case-up" data-ingredient="${ingredient.id}" aria-label="More cases of ${escapeHtml(ingredient.short)}">+</button></span><strong>${money(total)}</strong><button class="mini-order-button" data-action="place-order" data-ingredient="${ingredient.id}">ORDER</button></span>
       </div>`;
     }).join('')}</div>`;
   }).join('');
   return `
     <div class="panel-section order-intro">
-      <div class="section-heading"><div><div class="eyebrow">WHOLESALE DEPOT</div><h3>Place an order</h3></div><span class="tag tag-muted">SAME-DAY DROP</span></div>
-      <p class="product-description">Cases arrive in the dry store. Move them to the kitchen, with the shortest-dated stock at the front.</p>
+      <div class="section-heading"><div><div class="eyebrow">Supplier</div><h3>Place an order</h3></div><span class="tag tag-muted">SAME-DAY DROP</span></div>
+      <p class="product-description">Cases go straight into the walk-in. The kitchen always cooks from the shortest-dated lot first.</p>
       <div class="supplier-credit"><span>AVAILABLE CASH</span><strong>${money(state.cash)}</strong><small>Credit is separate. Draw it on the Books tab before ordering.</small></div>
     </div>
     <div class="order-catalog">${grouped}</div>
-    <div class="panel-section supplier-tip"><span class="tip-mark">✳</span><span><strong>BUY TO THE CLOCK.</strong><small>Eggs, milk and fresh produce turn quickly. Dry goods hold much longer.</small></span></div>`;
+    ${locked.length ? `<div class="panel-section"><div class="section-heading"><div><div class="eyebrow">NOT YET ON THE MENU</div><h3>Opens with new dishes</h3></div></div><div class="locked-list">${locked.map((ingredient) => `<span><b>${escapeHtml(ingredient.short)}</b> · cafe level ${ingredient.level}</span>`).join('')}</div></div>` : ''}
+    <div class="panel-section supplier-tip"><span><strong>Watch the dates.</strong><small>Milk, bread and tomatoes turn within days. Eggs, butter and coffee keep far longer.</small></span></div>`;
 }
 
 function financePanel() {
@@ -447,7 +415,7 @@ function financePanel() {
   const interest = state.debt * state.creditRate;
   return `
     <div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">WORKING CAPITAL</div><h3>Books & borrowing</h3></div><span class="tag ${state.debt ? 'tag-warning' : 'tag-good'}">${state.debt ? 'CREDIT ACTIVE' : 'DEBT FREE'}</span></div>
+      <div class="section-heading"><div><div class="eyebrow">Money</div><h3>Books & borrowing</h3></div><span class="tag ${state.debt ? 'tag-warning' : 'tag-good'}">${state.debt ? 'CREDIT ACTIVE' : 'DEBT FREE'}</span></div>
       <div class="finance-card"><div class="finance-card-top"><span>OUTSTANDING BALANCE</span><strong>${money(state.debt)}</strong></div><div class="debt-meter"><i style="width:${debtRatio}%"></i></div><div class="finance-card-foot"><span>${money(available)} available</span><span>${money(state.creditLimit)} limit</span></div></div>
       <div class="loan-terms"><div><span>DAILY INTEREST</span><strong>1.25%</strong></div><div><span>INTEREST AT CURRENT BALANCE</span><strong>${money(interest)} / day</strong></div><div><span>PAYMENT DUE</span><strong>End of each day</strong></div></div>
     </div>
@@ -458,13 +426,13 @@ function financePanel() {
       <div class="quick-amounts">${[100, 250, 500].map((amount) => `<button class="secondary-button" data-action="borrow" data-amount="${amount}" ${available < amount ? 'disabled' : ''}>+${money(amount)}</button>`).join('')}</div>
     </div>
     <div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">PAY IT BACK</div><h3>Repayment</h3></div></div>
+      <div class="section-heading"><div><div class="eyebrow">Credit</div><h3>Repayment</h3></div></div>
       <div class="repay-card"><div><strong>${money(state.debt)}</strong><small>Current principal + interest</small></div><button class="primary-button" data-action="repay-all" ${state.debt <= 0 || state.cash <= 0 ? 'disabled' : ''}>PAY IN FULL</button></div>
       <div class="quick-amounts">${[100, 250, 500].map((amount) => `<button class="secondary-button" data-action="repay" data-amount="${amount}" ${state.debt <= 0 || state.cash <= 0 ? 'disabled' : ''}>PAY ${money(amount)}</button>`).join('')}</div>
       <div class="fine-print">Repayments are taken from the register immediately. You cannot repay more cash than you have.</div>
     </div>
     <div class="panel-section">
-      <div class="section-heading"><div><div class="eyebrow">THE COST OF OPENING</div><h3>Daily overhead</h3></div></div>
+      <div class="section-heading"><div><div class="eyebrow">Running costs</div><h3>Daily overhead</h3></div></div>
       <div class="cost-list"><div><span>Rent</span><b>${money(state.dailyCosts.rent)}</b></div><div><span>Payroll · ${STAFF.length} staff</span><b>${money(state.dailyCosts.payroll)}</b></div><div><span>Utilities & refrigeration</span><b>${money(state.dailyCosts.utilities)}</b></div><div><span>Interest (added to balance)</span><b>${money(interest)}</b></div><div class="cost-total"><span>Expected daily overhead</span><b>${money(state.dailyCosts.rent + state.dailyCosts.payroll + state.dailyCosts.utilities + interest)}</b></div></div>
     </div>`;
 }
@@ -476,27 +444,27 @@ function staffPanel() {
   return `
     <div class="panel-section">
       <div class="section-heading"><div><div class="eyebrow">YOUR CREW</div><h3>People of the cafe</h3></div><span class="tag tag-good">${STAFF.length} ON SHIFT</span></div>
-      <p class="product-description">Good people make a good cafe. Your crew is on the clock whenever the shutters are up.</p>
+      <p class="product-description">Your crew is paid for the full day, whenever the cafe is open.</p>
       <div class="staff-task-card">
         <div class="staff-task-heading"><strong>TABLE SERVICE</strong><span>${waiterStatus}</span></div>
         <p>The waiter takes each order, Bob prepares the meal, and the waiter brings it to the table.</p>
-        <small>Guests are seated first · meals use ingredients from the kitchen</small>
+        <small>Guests are seated first · meals use ingredients from the walk-in</small>
       </div>
       <div class="staff-list">${STAFF.map((person, index) => `<div class="staff-card"><div class="staff-avatar staff-avatar-${index}">${initials(person)}</div><div class="staff-copy"><strong>${escapeHtml(person.name)}</strong><span>${escapeHtml(person.role)}</span><small>${money(person.wage)} / day · full shift</small></div><span class="staff-status">ON DUTY</span></div>`).join('')}</div>
     </div>
     <div class="panel-section">
       <div class="section-heading"><div><div class="eyebrow">HOUSEKEEPING</div><h3>Kitchen standards</h3></div></div>
-      <div class="standards-list"><div><span>✓</span> Rotate stock by expiry date, not delivery date.</div><div><span>✓</span> Keep milk, eggs and meat cold.</div><div><span>✓</span> Pull expired items from the kitchen and dry store.</div><div><span>✓</span> Keep enough cash in the register before the next order.</div></div>
+      <div class="standards-list"><div><span>✓</span> Rotate stock by expiry date, not delivery date.</div><div><span>✓</span> Keep milk, eggs and butter cold.</div><div><span>✓</span> Pull expired ingredients from the walk-in.</div><div><span>✓</span> Keep enough cash in the register before the next order.</div></div>
     </div>`;
 }
 
 function renderPanel({ preserveScroll = false } = {}) {
   const oldScroll = panel.scrollTop;
   if (currentTab === 'overview') panel.innerHTML = overviewPanel();
-  else if (currentTab === 'shelves') panel.innerHTML = shelfPanel();
+  else if (currentTab === 'shelves') panel.innerHTML = ingredientPanel();
   else if (currentTab === 'menu') panel.innerHTML = menuPanel();
   else if (currentTab === 'orders') panel.innerHTML = ordersPanel();
-  else if (currentTab === 'floor') panel.innerHTML = expansionPanel();
+  else if (currentTab === 'floor') panel.innerHTML = diningPanel();
   else if (currentTab === 'finance') panel.innerHTML = financePanel();
   else if (currentTab === 'staff') panel.innerHTML = staffPanel();
   else if (currentTab === 'reviews') panel.innerHTML = reviewsPanel();
@@ -512,15 +480,14 @@ function renderDaySummary() {
   const isOver = summary.net < 0;
   modal.innerHTML = `
     <div class="summary-card">
-      <div class="summary-eyebrow">THE BOOKS ARE CLOSED · DAY ${summary.day}</div>
-      <div class="summary-icon">${state.gameOver ? '×' : '✳'}</div>
-      <h2>${state.gameOver ? 'The shutters stay down.' : 'Another day on the block.'}</h2>
-      <p>${state.gameOver ? 'Cafe finances or neighborhood reputation ran out of runway. The doors have closed.' : 'Count the till, check the shelves, and get ready for tomorrow.'}</p>
+      <div class="summary-eyebrow">Day ${summary.day} closed</div>
+      <h2>${state.gameOver ? 'The cafe has closed for good.' : 'Day done.'}</h2>
+      <p>${state.gameOver ? 'The cafe ran out of money or reputation.' : 'Count the till, check the walk-in, and get ready for tomorrow.'}</p>
       <div class="summary-metrics"><div><span>SALES</span><b>${money(summary.revenue)}</b></div><div><span>GROSS PROFIT</span><b>${money(summary.grossProfit)}</b></div><div><span>DINERS</span><b>${summary.customers}</b></div><div><span>FOOD / SERVICE</span><b>${summary.averageFoodQuality ?? 0} / ${summary.averageServiceQuality ?? 0}</b></div></div>
       <div class="summary-costs"><div><span>Rent</span><b>${money(summary.expenses.rent)}</b></div><div><span>Payroll</span><b>${money(summary.expenses.payroll)}</b></div><div><span>Utilities</span><b>${money(summary.expenses.utilities)}</b></div><div><span>Credit interest</span><b>${money(summary.expenses.interest)}</b></div><div><span>Inventory purchased</span><b>${money(summary.purchases)}</b></div><div><span>Expired stock written off</span><b>${money(summary.waste)}</b></div></div>
-      <div class="summary-net ${isOver ? 'negative' : 'positive'}"><span>TRADING RESULT AFTER OVERHEAD</span><strong>${summary.net >= 0 ? '+' : '−'}${money(Math.abs(summary.net))}</strong></div>
+      <div class="summary-net ${isOver ? 'negative' : 'positive'}"><span>Result after running costs</span><strong>${summary.net >= 0 ? '+' : '−'}${money(Math.abs(summary.net))}</strong></div>
       <div class="summary-balance"><span>REGISTER ${money(summary.cash)}</span><span>CREDIT ${money(summary.debt)}</span></div>
-      ${state.gameOver ? '<button class="primary-button summary-next" data-action="restart">TRY A NEW STORE ↗</button>' : '<button class="primary-button summary-next" data-action="next-day">OPEN TOMORROW ↗</button>'}
+      ${state.gameOver ? '<button class="primary-button summary-next" data-action="restart">Start a new cafe</button>' : '<button class="primary-button summary-next" data-action="next-day">Open tomorrow</button>'}
     </div>`;
 }
 
@@ -546,50 +513,38 @@ document.addEventListener('click', (event) => {
   withAudioWake();
   if (button.dataset.tab) { setTab(button.dataset.tab); return; }
   const action = button.dataset.action;
-  const productId = button.dataset.product;
+  const ingredientId = button.dataset.ingredient;
   const amount = Number(button.dataset.amount);
-  if (action === 'select-product') { selectedProduct = productId; currentTab = 'shelves'; renderPanel(); return; }
+  if (action === 'select-ingredient') { selectedIngredient = ingredientId; currentTab = 'shelves'; renderPanel(); return; }
   if (action === 'filter-stock') { stockFilter = button.dataset.filter; renderPanel(); return; }
-  if (action === 'restock') {
-    const result = restockProduct(state, productId);
-    notify(result.moved ? `${result.moved} ${PRODUCT_BY_ID[productId].short.toLowerCase()} moved to the floor.` : result.reason === 'shelf-full' ? 'That shelf is already full.' : 'No backroom stock to move.', result.moved ? 'good' : 'info');
-  }
-  if (action === 'restock-all') {
-    const moved = restockAll(state);
-    notify(moved ? `${moved} units moved from the stockroom. Oldest dates went to the front.` : 'The shelves are already full or the stockroom is empty.', moved ? 'good' : 'info');
-  }
   if (action === 'pull-expired') {
     const result = pullExpired(state);
-    notify(result.removed ? `${result.removed} expired units pulled · ${money(result.loss)} written off.` : 'No expired stock found.', result.removed ? 'good' : 'info');
+    notify(result.removed ? `${result.removed} expired portions pulled · ${money(result.loss)} written off.` : 'No expired stock found.', result.removed ? 'good' : 'info');
   }
-  if (action === 'pull-product-expired') {
-    const product = PRODUCT_BY_ID[productId];
-    const result = pullExpired(state, productId);
-    notify(result.removed ? `${result.removed} ${product.short.toLowerCase()} removed.` : `No expired ${product.short.toLowerCase()} found.`, result.removed ? 'good' : 'info');
+  if (action === 'pull-ingredient-expired') {
+    const ingredient = INGREDIENT_BY_ID[ingredientId];
+    const result = pullExpired(state, ingredientId);
+    notify(result.removed ? `${result.removed} ${ingredient.short.toLowerCase()} removed.` : `No expired ${ingredient.short.toLowerCase()} found.`, result.removed ? 'good' : 'info');
   }
-  if (action === 'price-up') { adjustPrice(state, productId, 0.25); }
-  if (action === 'price-down') { adjustPrice(state, productId, -0.25); }
-  if (action === 'case-up') { state.orderCases[productId] = Math.min(20, (state.orderCases[productId] || 1) + 1); }
-  if (action === 'case-down') { state.orderCases[productId] = Math.max(1, (state.orderCases[productId] || 1) - 1); }
-  if (action === 'buy-fixture') {
-    const result = buyFixture(state, button.dataset.fixture);
-    if (result.ok) notify('New fixture installed. Order stock for it on this tab.', 'good');
-    else notify(result.reason === 'insufficient-funds' ? `Short ${money(result.shortfall)} for that fixture.` : result.reason === 'level-too-low' ? `Opens at store level ${result.level}.` : 'That fixture could not be bought.', 'danger');
+  if (action === 'reorder-low') {
+    let ordered = 0, spent = 0;
+    for (const ingredient of openIngredients(state)) {
+      const good = pantryQuantity(state, ingredient.id) - expiredQuantity(state, ingredient.id);
+      if (good >= ingredient.caseSize * 0.25) continue;
+      const result = placeOrder(state, ingredient.id, 1);
+      if (result.ok) { ordered += 1; spent += result.total; }
+    }
+    notify(ordered ? `${ordered} low ingredient${ordered === 1 ? '' : 's'} reordered · ${money(spent)}.` : 'Nothing is running low, or there is not enough cash.', ordered ? 'good' : 'info');
   }
-  if (action === 'move-fixture') {
-    selectedPiece = button.dataset.piece;
-    world.selection.select(selectedPiece);
-    world.placement.start(button.dataset.piece, state);
-    notify('Click the floor to place the fixture. R turns it, Esc cancels.', 'info');
-    renderPanel({ preserveScroll: true });
-  }
-  if (action === 'rotate-fixture') world.placement.rotate();
-  if (action === 'cancel-fixture') { world.placement.cancel(); renderPanel({ preserveScroll: true }); }
+  if (action === 'price-up' || action === 'price-down') adjustMenuPrice(state, button.dataset.dish, action === 'price-up' ? 0.25 : -0.25);
+  if (action === 'case-up') { state.orderCases[ingredientId] = Math.min(20, (state.orderCases[ingredientId] || 1) + 1); }
+  if (action === 'case-down') { state.orderCases[ingredientId] = Math.max(1, (state.orderCases[ingredientId] || 1) - 1); }
   if (action === 'place-order') {
-    const result = placeOrder(state, productId, state.orderCases[productId] || 1);
+    const cases = currentTab === 'shelves' ? 1 : state.orderCases[ingredientId] || 1;
+    const result = placeOrder(state, ingredientId, cases);
     if (result.ok) {
-      notify(`${result.qty} ${PRODUCT_BY_ID[productId].short.toLowerCase()} delivered to backroom.`, 'good');
-      state.orderCases[productId] = 1;
+      notify(`${result.qty} ${INGREDIENT_BY_ID[ingredientId].short.toLowerCase()} delivered to the walk-in.`, 'good');
+      state.orderCases[ingredientId] = 1;
     } else notify(result.reason === 'insufficient-funds' ? `Short ${money(result.shortfall)}. Use the credit line or choose fewer cases.` : 'That order could not be placed.', 'danger');
   }
   if (action === 'borrow') {
@@ -612,7 +567,7 @@ document.addEventListener('click', (event) => {
   if (action === 'next-day') {
     startNextDay(state);
     $('#day-summary').classList.add('hidden');
-    notify(`Day ${state.day} is open. Make it count.`, 'good');
+    notify(`Day ${state.day} is open.`, 'good');
   }
   if (action === 'restart') {
     window.location.reload();
@@ -642,7 +597,7 @@ $('#open-store').addEventListener('click', () => {
   beginDay(state);
   world.setOpen(true);
   refresh();
-  notify('The shutters are up. Here comes the neighborhood.', 'good');
+  notify('The cafe is open.', 'good');
 });
 
 $('#pause-toggle').addEventListener('click', () => {
@@ -650,16 +605,16 @@ $('#pause-toggle').addEventListener('click', () => {
   updateHeader();
 });
 
-const WALL_LABEL = { auto: 'AUTO', solid: 'SOLID', ghost: 'GHOST' };
+const WALL_LABEL = { auto: 'Auto', solid: 'Solid', ghost: 'See-through' };
 $('#wall-toggle').addEventListener('click', () => {
-  $('#wall-toggle').textContent = `WALLS · ${WALL_LABEL[world.cycleWallMode()]}`;
+  $('#wall-toggle').textContent = `Walls: ${WALL_LABEL[world.cycleWallMode()]}`;
 });
 
 $('#sound-toggle').addEventListener('click', () => {
   audioMuted = !audioMuted;
   audio.setMuted(audioMuted);
   if (!audioMuted) audio.wake();
-  $('#sound-toggle').textContent = audioMuted ? '♫̸' : '♫';
+  $('#sound-toggle').textContent = audioMuted ? '♪̸' : '♪';
   $('#sound-toggle').classList.toggle('muted', audioMuted);
 });
 
@@ -679,7 +634,7 @@ function frame(now) {
   recordNewEvents();
   if (now - lastHeaderRender > 160) { updateHeader(); lastHeaderRender = now; }
   if (now - lastPanelRender > 900) {
-    if (currentTab === 'overview' || currentTab === 'staff' || currentTab === 'finance' || currentTab === 'orders' || currentTab === 'floor' || (currentTab === 'shelves' && !$('#stock-search')?.matches(':focus'))) renderPanel({ preserveScroll: true });
+    if (currentTab === 'overview' || currentTab === 'staff' || currentTab === 'finance' || currentTab === 'orders' || currentTab === 'floor' || (currentTab === 'shelves' && !$('#stock-search')?.matches(':focus')) || currentTab === 'menu') renderPanel({ preserveScroll: true });
     renderDaySummary();
     lastPanelRender = now;
   }

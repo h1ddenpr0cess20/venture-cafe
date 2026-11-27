@@ -3,78 +3,70 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#173b32" />
-    <meta name="description" content="Run Venture Cafe, a neighborhood breakfast cafe. Cook eggs, pour coffee, serve the regulars, and keep the books balanced." />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="description" content="Run Venture Cafe, a neighborhood breakfast cafe: seat the regulars, keep the kitchen stocked and keep the books balanced." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>VENTURE CAFE — Breakfast & Neighborhood Stories</title>
+    <title>Venture Cafe</title>
   </head>
   <body>
     <div id="app">
       <header class="topbar">
-        <div class="brand-lockup">
-          <div class="brand-mark">V<span>✳</span></div>
-          <div><div class="brand-name">VENTURE CAFE</div><div class="brand-kicker">BREAKFAST · COFFEE · COMMUNITY</div></div>
-        </div>
+        <div class="brand-lockup"><div class="brand-name">Venture Cafe</div></div>
         <div class="top-stats">
-          <div class="top-stat"><span class="stat-label">REGISTER</span><strong id="cash-value">$1,250.00</strong></div>
-          <div class="top-stat"><span class="stat-label">OUTSTANDING CREDIT</span><strong id="debt-value">$0.00</strong></div>
-          <div class="top-stat"><span class="stat-label">TODAY'S SALES</span><strong id="revenue-value">$0.00</strong></div>
-          <div class="top-stat rep-stat"><span class="stat-label">NEIGHBORHOOD REP</span><div class="rep-line"><strong id="rep-value">78</strong><div class="rep-meter"><i id="rep-meter"></i></div></div></div>
+          <div class="top-stat"><span class="stat-label">Register</span><strong id="cash-value">$1,250.00</strong></div>
+          <div class="top-stat"><span class="stat-label">Credit owed</span><strong id="debt-value">$0.00</strong></div>
+          <div class="top-stat"><span class="stat-label">Sales today</span><strong id="revenue-value">$0.00</strong></div>
+          <div class="top-stat rep-stat"><span class="stat-label">Reputation</span><div class="rep-line"><strong id="rep-value">78</strong><div class="rep-meter"><i id="rep-meter"></i></div></div></div>
         </div>
         <div class="day-controls">
-          <div class="clock-block"><span id="day-label">DAY 01</span><strong id="clock-value">7:00 AM</strong></div>
-          <button class="icon-button" id="sound-toggle" title="Toggle sound" aria-label="Toggle sound">♫</button>
-          <button class="icon-button" id="pause-toggle" title="Pause simulation" aria-label="Pause simulation">Ⅱ</button>
+          <div class="clock-block"><span id="day-label">Day 1</span><strong id="clock-value">7:00 AM</strong></div>
+          <button class="icon-button" id="sound-toggle" title="Sound on or off" aria-label="Sound on or off">♪</button>
+          <button class="icon-button" id="pause-toggle" title="Pause" aria-label="Pause">Ⅱ</button>
         </div>
       </header>
 
       <main class="workspace">
         <section class="scene-column">
           <div class="scene-topline">
-            <div class="scene-location"><span class="live-dot"></span><span>VENTURE CAFE · YOUR NEIGHBORHOOD</span><span class="scene-divider">/</span><span id="shop-status">SHUTTERS DOWN</span></div>
+            <div class="scene-location"><span class="live-dot"></span><span id="shop-status">Closed</span></div>
             <div class="scene-tools">
-              <span class="scene-hint">MIDDLE-DRAG TO LOOK · WASD TO WALK</span>
-              <button class="wall-button" id="wall-toggle" type="button" title="Walls between the camera and the shop fade away (Auto), stay solid, or are always ghosted">WALLS · AUTO</button>
-              <div class="speed-control" aria-label="Simulation speed">
+              <span class="scene-hint">Middle-drag to look · WASD to walk</span>
+              <button class="wall-button" id="wall-toggle" type="button" title="Walls between the camera and the cafe fade away (Auto), stay solid, or are always see-through">Walls: Auto</button>
+              <div class="speed-control" aria-label="Speed">
                 <button data-speed="1" class="speed-button active">1×</button>
                 <button data-speed="2" class="speed-button">2×</button>
                 <button data-speed="3" class="speed-button">3×</button>
               </div>
             </div>
           </div>
-          <div id="world" aria-label="Three dimensional breakfast cafe with booths, tables, service bar and kitchen"></div>
-          <div id="player-controls" class="player-controls hidden" aria-label="Move your store owner">
-            <span class="player-controls-label">MOVE · WASD / ARROWS</span>
+          <div id="world" aria-label="The cafe: dining room, service bar and kitchen"></div>
+          <div id="player-controls" class="player-controls hidden" aria-label="Move the owner">
             <button type="button" data-player-move="up" aria-label="Walk forward">▲</button>
             <div class="player-controls-row">
               <button type="button" data-player-move="left" aria-label="Walk left">◀</button>
-              <span>YOU</span>
+              <span>You</span>
               <button type="button" data-player-move="right" aria-label="Walk right">▶</button>
             </div>
             <button type="button" data-player-move="down" aria-label="Walk backward">▼</button>
           </div>
           <div class="scene-bottomline">
-            <div class="scene-caption"><span class="caption-mark">✳</span><span id="scene-caption">The coffee's on. The neighborhood is waking up.</span></div>
-            <div class="scene-foot-meta"><span id="foot-customers">0 DINERS IN THE CAFE</span><span class="scene-divider">·</span><span id="foot-traffic">FOOTFALL STEADY</span><span class="scene-divider">·</span><span id="foot-staff">3 CAFE CREW ON SHIFT</span></div>
+            <span id="foot-customers">0 diners</span><span class="scene-divider">·</span><span id="foot-traffic">Traffic steady</span><span class="scene-divider">·</span><span id="foot-staff">3 crew on shift</span>
           </div>
           <div id="loading-overlay" class="loading-overlay" role="status" aria-live="polite">
             <div class="loading-card">
-              <div class="loading-eyebrow"><span class="live-dot"></span> VENTURE CAFE · BREAKFAST SERVICE</div>
-              <div class="loading-emblem">✳</div>
-              <h2>Getting the cafe ready.</h2>
-              <p id="loading-status">Warming the kitchen and setting the tables</p>
+              <h2>Setting up the cafe</h2>
+              <p id="loading-status">Starting up</p>
               <div class="loading-progress-track"><i id="loading-progress-fill"></i></div>
-              <div class="loading-progress-row"><span>SETTING THE TABLES</span><strong id="loading-percent">0%</strong></div>
+              <div class="loading-progress-row"><span>Loading</span><strong id="loading-percent">0%</strong></div>
             </div>
           </div>
           <div id="start-overlay" class="start-overlay">
             <div class="opening-card">
-              <div class="opening-eyebrow"><span>EST. 2026</span><span class="opening-star">✳</span><span>A BETTER MORNING STARTS HERE</span></div>
-              <h1>A neighborhood cafe.<br /><em>A hundred little rituals.</em></h1>
-              <p>Work the breakfast rush, keep the coffee moving, turn out perfect eggs, and make every regular feel at home.</p>
-              <div class="opening-details"><span><b>$1,250</b> starting cash</span><span><b>9</b> breakfast items</span><span><b>3</b> staff</span></div>
-              <button id="open-store" class="primary-button opening-button">OPEN FOR BREAKFAST <span>↗</span></button>
-              <div class="opening-note">A working cafe runs on working capital. Ingredient orders, wages, rent, and interest all come due.<br />Move with WASD or arrow keys · Hold Shift to hurry · Hold the middle mouse button and drag to look around.</div>
+              <h1>Venture Cafe</h1>
+              <p>Run a neighborhood breakfast cafe. Seat the regulars, keep the kitchen stocked, price the menu and keep the books balanced.</p>
+              <div class="opening-details"><span><b>$1,250</b> starting cash</span><span><b>9</b> dishes</span><span><b>3</b> crew</span></div>
+              <button id="open-store" class="primary-button opening-button">Open for breakfast</button>
+              <div class="opening-note">Walk with WASD or the arrow keys, hold Shift to hurry, and hold the middle mouse button and drag to look around.</div>
             </div>
           </div>
           <div id="day-summary" class="day-summary hidden"></div>
@@ -83,36 +75,22 @@
 
         <aside class="ops-panel">
           <div class="ops-heading">
-            <div><div class="eyebrow">THE CAFE OFFICE</div><h2>Cafe operations</h2></div>
-            <div class="open-pill" id="open-pill"><i></i><span>CLOSED</span></div>
+            <h2>Cafe office</h2>
+            <div class="open-pill" id="open-pill"><i></i><span>Closed</span></div>
           </div>
           <nav class="tabs" aria-label="Cafe management">
-            <button class="tab active" data-tab="overview"><span class="tab-icon">◫</span>Overview</button>
-            <button class="tab" data-tab="menu"><span class="tab-icon">▤</span>Menu</button>
-            <button class="tab" data-tab="shelves"><span class="tab-icon">▤</span>Ingredients<span id="shelf-alert-count" class="tab-count hidden">0</span></button>
-            <button class="tab" data-tab="orders"><span class="tab-icon">▣</span>Suppliers</button>
-            <button class="tab" data-tab="floor"><span class="tab-icon">▦</span>Dining Room</button>
-            <button class="tab" data-tab="finance"><span class="tab-icon">＄</span>Books</button>
-            <button class="tab" data-tab="staff"><span class="tab-icon">♙</span>Staff</button>
-            <button class="tab review-tab" data-tab="reviews"><span class="tab-icon">★</span>Reviews</button>
+            <button class="tab active" data-tab="overview">Overview</button>
+            <button class="tab" data-tab="menu">Menu</button>
+            <button class="tab" data-tab="shelves">Pantry<span id="shelf-alert-count" class="tab-count hidden">0</span></button>
+            <button class="tab" data-tab="orders">Orders</button>
+            <button class="tab" data-tab="floor">Dining</button>
+            <button class="tab" data-tab="finance">Books</button>
+            <button class="tab" data-tab="staff">Crew</button>
+            <button class="tab review-tab" data-tab="reviews">Reviews</button>
           </nav>
           <div id="panel-content" class="panel-content"></div>
-          <div class="panel-footer">
-            <div class="footer-badge">✳</div>
-            <div><strong>LOOK AFTER YOUR BLOCK.</strong><span>THE BLOCK LOOKS AFTER YOU.</span></div>
-            <div class="footer-version">v1.0</div>
-          </div>
-        </aside>
-        <aside class="review-panel" aria-label="Simulated neighborhood cafe reviews">
-          <div class="review-panel-heading">
-            <div class="review-brand"><span class="review-brand-mark">✳</span><span><strong>BLOCKLINE</strong><small>LOCAL CAFE REVIEWS</small></span></div>
-            <span class="review-live"><i></i> LIVE</span>
-          </div>
-          <div class="review-store-title"><div><div class="eyebrow">YOUR LISTING</div><h2>Venture Cafe · Neighborhood</h2></div><span class="review-verified">✓</span></div>
-          <div id="review-feed-content" class="review-feed-content"></div>
         </aside>
       </main>
-      <div class="bottom-rail"><span><i class="live-dot"></i>THE COFFEE IS ALWAYS ON</span><span id="bottom-message">Fresh breakfast. Good coffee. Good people.</span><span>MADE ON THE BLOCK <b>✳</b></span></div>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

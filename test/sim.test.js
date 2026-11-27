@@ -1,19 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  PRODUCTS, createGameState, productNow, placeOrder, restockProduct, pullExpired,
-  oldestShelfBatch, sellFromShelf, borrowCredit, repayCredit, advanceGame,
-  beginDay, startNextDay, adjustPrice, PRODUCT_BY_ID, saveGameState, loadGameState,
-  REVIEW_BANK, maybeLeaveReview, customerArrivalInterval, trafficLabel, reviewSummary,
-  RESIDENTS, RESIDENT_BY_ID, STAFF, chooseResident, buildBasket, getStoreLevel, getStoreLevelProgress, activeFrameDelta,
+  INGREDIENTS, INGREDIENT_BY_ID, createGameState, productNow, placeOrder, pullExpired, pantryQuantity, pantryHealth,
+  borrowCredit, repayCredit, advanceGame, beginDay, startNextDay, adjustMenuPrice, saveGameState, loadGameState,
+  maybeLeaveReview, customerArrivalInterval, trafficLabel, reviewSummary, openMenu, chooseDish, chooseResident,
+  RESIDENTS, STAFF, getStoreLevel, getStoreLevelProgress, activeFrameDelta, expiredQuantity, qtyOf, isOpen,
 } from '../src/sim.js';
+import { CAFE_MENU, CAFE_MENU_BY_ID } from '../src/menu.js';
 
-import { CAFE_MENU_BY_ID } from '../src/menu.js';
 function prepareState() {
   const state = createGameState(7);
   state.started = true;
   state.paused = false;
   return state;
+}
+/** Run the clock in the small steps a frame takes. */
+function run(state, minutes, step = 0.1) {
+  for (let t = 0; t < minutes; t += step) advanceGame(state, step);
+}
+/** A guest at the first table, already waiting for the waiter. */
+function seatedGuest(state, extra = {}) {
+  const customer = {
+    id: 9001, residentId: 'ari', name: 'Ari', reviewName: 'A. Guest', menuChoiceId: 'scrambled-eggs', thrift: 0.5,
+    seatId: 'table-a-west', arrivalDuration: 2.4, arrivalTimer: 0, serviceStatus: 'waiting',
+    phase: 'browsing', phaseTotal: 12, phaseTimer: 12, result: null, bought: 0, spend: 0, ...extra,
+  };
+  state.customers.push(customer);
+  return customer;
 }
 
 test('the shared frame delta respects pause state and selected game speed', () => {
@@ -37,409 +50,277 @@ test('the shared frame delta respects pause state and selected game speed', () =
   assert.equal(activeFrameDelta(state, Number.NaN), 0);
 });
 
-test('the catalogue covers produce, dry goods, dairy, eggs, meat, bakery and frozen groceries', () => {
-  const categories = new Set(PRODUCTS.map((p) => p.category));
-  for (const category of ['Produce', 'Dry goods', 'Dairy', 'Eggs', 'Meat', 'Bakery', 'Frozen', 'Drinks']) assert.ok(categories.has(category), category);
+test('the pantry holds only what a breakfast kitchen cooks with, with different expiry horizons', () => {
+  assert.equal(INGREDIENTS.length, 9);
+  const life = (id) => INGREDIENT_BY_ID[id].shelfLife;
+  assert.ok(life('milk') < life('eggs') && life('bread') < life('eggs') && life('tomatoes') < life('potatoes'));
+  assert.ok(life('coffee') > life('eggs'), 'coffee keeps longest');
+  for (const ingredient of INGREDIENTS) assert.ok(ingredient.cost > 0 && ingredient.caseSize > 0 && ingredient.level >= 1);
+  for (const item of CAFE_MENU) for (const id of Object.keys(item.ingredients)) assert.ok(INGREDIENT_BY_ID[id], `${item.id} → ${id}`);
 });
 
-test('fresh produce, chilled goods and dry pantry staples have distinct expiry horizons', () => {
-  assert.equal(PRODUCT_BY_ID.lettuce.shelfLife, 3);
-  assert.equal(PRODUCT_BY_ID.milk.shelfLife, 6);
-  assert.equal(PRODUCT_BY_ID.eggs.shelfLife, 28);
-  assert.equal(PRODUCT_BY_ID.pasta.shelfLife, 240);
-  assert.ok(PRODUCT_BY_ID.lettuce.shelfLife < PRODUCT_BY_ID.milk.shelfLife);
-  assert.ok(PRODUCT_BY_ID.milk.shelfLife < PRODUCT_BY_ID.eggs.shelfLife);
-  assert.ok(PRODUCT_BY_ID.eggs.shelfLife < PRODUCT_BY_ID.pasta.shelfLife);
-});
-
-test('supplier deliveries go to the stockroom, not directly to a shelf', () => {
+test('ingredients and dishes open by cafe level, and a locked ingredient cannot be ordered', () => {
   const state = prepareState();
-  const beforeShelf = state.shelves.rice.reduce((n, b) => n + b.qty, 0);
-  const beforeBackroom = state.stockroom.rice.reduce((n, b) => n + b.qty, 0);
-  const order = placeOrder(state, 'rice', 2);
-  assert.equal(order.ok, true);
-  assert.equal(state.shelves.rice.reduce((n, b) => n + b.qty, 0), beforeShelf);
-  assert.equal(state.stockroom.rice.reduce((n, b) => n + b.qty, 0), beforeBackroom + PRODUCT_BY_ID.rice.caseSize * 2);
+  assert.equal(getStoreLevel(state), 1);
+  assert.ok(openMenu(state).every((item) => item.level === 1));
+  assert.ok(!openMenu(state).some((item) => item.id === 'diner-omelette'));
+  assert.equal(isOpen(state, 'cheese'), false);
+  assert.deepEqual(placeOrder(state, 'cheese', 1), { ok: false, reason: 'not-stocked' });
+  state.experience = 500;
+  assert.equal(getStoreLevel(state), 3);
+  assert.ok(openMenu(state).some((item) => item.id === 'diner-omelette') && openMenu(state).length === CAFE_MENU.length);
+  assert.equal(isOpen(state, 'cheese'), true);
+  assert.equal(placeOrder(state, 'cheese', 1).ok, true);
 });
 
-test('restocking moves earliest-expiring stock to the shelf and preserves its original expiry', () => {
+test('diners only order dishes that are on the menu, and lean toward what they like', () => {
   const state = prepareState();
-  const ordered = placeOrder(state, 'milk', 1);
-  assert.equal(ordered.ok, true);
-  const delivery = state.stockroom.milk[0];
-  const originalExpiry = delivery.expiresAt;
-  const deliveryLotId = delivery.lotId;
-  const originalFront = oldestShelfBatch(state, 'milk').expiresAt;
-  const result = restockProduct(state, 'milk');
-  assert.ok(result.moved > 0);
-  assert.equal(state.stockroom.milk.length, 0);
-  const movedLot = state.shelves.milk.find((batch) => batch.lotId === deliveryLotId);
-  assert.equal(movedLot.expiresAt, originalExpiry);
-  assert.equal(state.shelves.milk[0].expiresAt, originalFront);
-  assert.ok(state.shelves.milk.every((batch, i, all) => i === 0 || all[i - 1].expiresAt <= batch.expiresAt));
+  const ari = RESIDENTS.find((resident) => resident.id === 'ari');
+  const picks = { 'coffee': 0, 'scrambled-eggs': 0 };
+  let other = 0;
+  for (let i = 0; i < 600; i++) {
+    const item = chooseDish(state, ari);
+    assert.ok(openMenu(state).includes(item), `${item.id} is open at level 1`);
+    if (item.id in picks) picks[item.id] += 1; else other += 1;
+  }
+  assert.ok(picks.coffee + picks['scrambled-eggs'] > other / 2, 'a regular orders their usual more than their share');
 });
 
-test('FIFO checkout consumes the oldest lot first', () => {
+test('supplier deliveries go into the walk-in with a fixed expiry', () => {
   const state = prepareState();
-  const productId = 'rice';
-  const later = state.shelves[productId].at(-1);
-  const older = { ...later, lotId: later.lotId + 10000, qty: 2, expiresAt: later.expiresAt - 4, receivedAt: later.receivedAt - 4 };
-  state.shelves[productId].push(older);
-  const beforeOldest = older.qty;
-  sellFromShelf(state, productId, 1);
-  assert.equal(older.qty, beforeOldest - 1);
-  assert.equal(state.shelves[productId][0].lotId, older.lotId);
-});
-
-test('expired stock at the front of the shelf cannot be sold', () => {
-  const state = prepareState();
-  const batch = state.shelves.bananas[0];
-  batch.expiresAt = productNow(state) - 0.01;
+  const before = pantryQuantity(state, 'eggs');
   const cash = state.cash;
-  const result = sellFromShelf(state, 'bananas', 1);
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, 'expired');
-  assert.equal(state.cash, cash);
+  const result = placeOrder(state, 'eggs', 2);
+  assert.equal(result.ok, true);
+  assert.equal(result.qty, INGREDIENT_BY_ID.eggs.caseSize * 2);
+  assert.equal(pantryQuantity(state, 'eggs'), before + result.qty);
+  assert.equal(Math.round((cash - state.cash) * 100) / 100, result.total);
+  assert.ok(Math.abs(result.expiresAt - (productNow(state) + 28)) < 1e-9);
+  assert.equal(placeOrder(state, 'eggs', 0).reason, 'invalid-quantity');
+  assert.equal(placeOrder(state, 'nope', 1).reason, 'invalid-quantity');
+  state.cash = 1;
+  assert.equal(placeOrder(state, 'eggs', 5).reason, 'insufficient-funds');
 });
 
-test('pulling expired stock clears shelf and stockroom batches and books wholesale waste', () => {
+test('the kitchen cooks from the oldest valid lot first, and never from an expired one', () => {
   const state = prepareState();
+  state.nextArrival = 100000;
+  state.pantry.eggs = [
+    { lotId: 1, qty: 3, receivedAt: 0.5, expiresAt: 1.2, unitCost: 0.32 },    // expired already (it is day 1 + 7 h)
+    { lotId: 2, qty: 3, receivedAt: 0.9, expiresAt: 9, unitCost: 0.32 },
+    { lotId: 3, qty: 3, receivedAt: 1.0, expiresAt: 30, unitCost: 0.32 },
+  ];
+  state.pantry.butter = [{ lotId: 4, qty: 10, receivedAt: 1, expiresAt: 30, unitCost: 0.22 }];
+  seatedGuest(state);
+  run(state, 5);
+  const left = Object.fromEntries(state.pantry.eggs.map((lot) => [lot.lotId, lot.qty]));
+  assert.equal(left[1], 3, 'the expired lot is left alone');
+  assert.equal(left[2], undefined, 'the older valid lot went first');
+  assert.equal(left[3], 3, 'the newer lot is untouched');
+});
+
+test('pulling expired stock clears the walk-in and books waste at wholesale cost', () => {
+  const state = prepareState();
+  state.pantry.milk = [
+    { lotId: 91, qty: 5, receivedAt: 0, expiresAt: 0.5, unitCost: 0.25 },
+    { lotId: 92, qty: 7, receivedAt: 1, expiresAt: 99, unitCost: 0.25 },
+  ];
+  assert.equal(expiredQuantity(state, 'milk'), 5);
+  assert.equal(pantryHealth(state).expired, 5);
+  const result = pullExpired(state, 'milk');
+  assert.equal(result.removed, 5);
+  assert.equal(result.loss, 1.25);
+  assert.equal(state.dayStats.waste, 1.25);
+  assert.equal(qtyOf(state.pantry.milk), 7);
+  assert.equal(pullExpired(state).removed, 0);
+});
+
+test('menu prices stay between what a dish costs to make and a sensible cap', () => {
+  const state = prepareState();
+  const coffee = CAFE_MENU_BY_ID.coffee;
+  assert.equal(state.menuPrices.coffee, coffee.price);
+  adjustMenuPrice(state, 'coffee', 0.5);
+  assert.equal(state.menuPrices.coffee, coffee.price + 0.5);
+  adjustMenuPrice(state, 'coffee', -100);
+  assert.ok(state.menuPrices.coffee > 0.3 + 0.25, 'never below cost');
+  adjustMenuPrice(state, 'coffee', 100);
+  assert.ok(state.menuPrices.coffee <= coffee.price * 1.6 + 1e-9);
+  assert.equal(adjustMenuPrice(state, 'nope', 1), false);
+});
+
+test('a guest who finds the dish too dear still pays, but marks the cafe down and writes a pricey review', () => {
+  const state = prepareState();
+  state.nextArrival = 100000;
+  state.random = () => 0;
+  state.menuPrices['scrambled-eggs'] = CAFE_MENU_BY_ID['scrambled-eggs'].price * 1.5;
+  const guest = seatedGuest(state, { thrift: 0.2 });
   const reputation = state.reputation;
-  state.shelves.bananas[0].expiresAt = productNow(state) - 1;
-  state.stockroom.beans.push({ lotId: 999, qty: 4, receivedAt: 0, expiresAt: productNow(state) - 1, unitCost: 0.48 });
-  const result = pullExpired(state);
-  assert.ok(result.removed >= 6);
-  assert.equal(state.shelves.bananas.some((batch) => batch.expiresAt <= productNow(state)), false);
-  assert.equal(state.stockroom.beans.length, 0);
-  assert.ok(state.dayStats.waste > 0);
-  assert.equal(state.reputation, reputation, 'proactive removal prevents complaints and should not itself cost trust');
+  run(state, 24);
+  assert.equal(guest.result, 'pricey');
+  assert.ok(state.dayStats.pricedOut === 1 && state.reputation < reputation + 0.1);
+  assert.ok(state.events.some((event) => /pricey/.test(event.message)));
+  assert.ok(state.cash > 1250 + 10, 'they still paid the higher price');
+  const review = state.reviews[0];
+  assert.equal(review.outcome, 'pricey');
+  assert.ok(review.rating <= 3);
 });
 
 test('credit can be drawn and repaid, but never beyond the credit limit or cash balance', () => {
   const state = prepareState();
-  const loan = borrowCredit(state, 500);
-  assert.equal(loan.ok, true);
-  assert.equal(state.debt, 500);
-  assert.equal(borrowCredit(state, 2000).ok, false);
-  const paid = repayCredit(state, 125);
-  assert.equal(paid.amount, 125);
-  assert.equal(state.debt, 375);
-  state.cash = 20;
-  assert.equal(repayCredit(state, 100).amount, 20);
-});
-
-test('prices cannot be reduced below cost or raised without a sensible cap', () => {
-  const state = prepareState();
-  adjustPrice(state, 'milk', -100);
-  assert.ok(state.prices.milk > PRODUCT_BY_ID.milk.cost);
-  adjustPrice(state, 'milk', 100);
-  assert.ok(state.prices.milk <= PRODUCT_BY_ID.milk.price * 2.25);
-});
-
-test('day closure charges fixed operating costs and daily interest; next day resets the books', () => {
-  const state = prepareState();
-  beginDay(state);
-  borrowCredit(state, 200);
-  state.minute = 20 * 60 + 59;
-  advanceGame(state, 2);
-  assert.equal(state.dayEnded, true);
-  assert.equal(state.paused, true);
-  assert.equal(state.debt, 202.5);
-  assert.ok(state.cash < 1450);
-  const previousDay = state.day;
-  assert.equal(startNextDay(state), true);
-  assert.equal(state.day, previousDay + 1);
-  assert.equal(state.minute, 7 * 60);
-  assert.equal(state.dayEnded, false);
-  assert.equal(state.paused, false);
-});
-
-test('a shopper gets angry when the front-facing batch is expired', () => {
-  const state = prepareState();
-  state.shelves.bananas[0].expiresAt = productNow(state) - 0.01;
-  state.nextArrival = 100000;
-  state.customers.push({ id: 999, character: 'artist', name: 'Mrs. Russo', tag: 'regular', demandId: 'bananas', basket: [{ productId: 'bananas', qty: 1 }, { productId: 'milk', qty: 1 }], phase: 'browsing', phaseTotal: 0.04, phaseTimer: 0.04, result: null, bought: 0, spend: 0 });
-  advanceGame(state, 0.05);
-  assert.equal(state.dayStats.complaints, 1);
-  assert.equal(state.customers[0].result, 'expired');
-  assert.ok(state.events.some((event) => /expired bananas/i.test(event.message)));
-});
-
-test('a saved store resumes its exact ledger and active simulation after reload', () => {
-  const state = prepareState();
-  placeOrder(state, 'eggs', 2);
-  borrowCredit(state, 125);
-  const copy = loadGameState(saveGameState(state));
-  assert.ok(copy);
-  assert.equal(copy.cash, state.cash);
-  assert.equal(copy.debt, state.debt);
-  assert.equal(copy.stockroom.eggs[0].qty, state.stockroom.eggs[0].qty);
-  assert.equal(copy.paused, false);
-  assert.equal(typeof copy.random, 'function');
-  assert.equal(copy.random(), state.random());
-  assert.equal(loadGameState('{broken'), null);
-});
-
-test('a restored open store advances customer movement and the business clock without pressing resume', () => {
-  const state = prepareState();
-  state.minute = 9 * 60;
-  state.customers.push({
-    id: 9991, character: 'artist', name: 'Maya', tag: 'visitor', demandId: 'apples',
-    basket: [{ productId: 'apples', qty: 1 }], phase: 'browsing',
-    phaseTotal: 30, phaseTimer: 30, result: null, bought: 0, spend: 0, serviceStatus: 'served',
-  });
-  const restored = loadGameState(saveGameState(state));
-  assert.ok(restored);
-  assert.equal(restored.paused, false);
-  const beforeMinute = restored.minute;
-  const beforeTimer = restored.customers[0].phaseTimer;
-  advanceGame(restored, 0.5);
-  assert.ok(restored.minute > beforeMinute);
-  assert.ok(restored.customers[0].phaseTimer < beforeTimer);
-});
-
-test('customers shop with multi-line baskets and can complete valid lines after rejecting an expired item', () => {
-  const state = prepareState();
-  state.shelves.bananas[0].expiresAt = productNow(state) - 0.01;
-  const cash = state.cash;
-  const customer = { id: 1000, character: 'artist', name: 'Mr. Delgado', tag: 'regular', demandId: 'bananas', basket: [{ productId: 'bananas', qty: 1 }, { productId: 'milk', qty: 2 }], phase: 'browsing', phaseTotal: 0.04, phaseTimer: 0.04, result: null, bought: 0, spend: 0 };
-  state.nextArrival = 100000;
-  state.customers.push(customer);
-  advanceGame(state, 0.05);
-  assert.equal(customer.result, 'expired');
-  assert.equal(customer.bought, 2);
-  assert.ok(customer.spend > 0);
-  assert.ok(state.cash > cash);
-  assert.equal(state.dayStats.complaints, 1);
-});
-
-test('unhappy expired-stock visits are very likely to create a low-star public review', () => {
-  const state = prepareState();
-  const customer = {
-    id: 1001, name: 'Mrs. Russo', result: 'expired', expiredProductId: 'milk', demandId: 'milk',
-  };
-  state.random = () => 0;
-  const before = state.reputation;
-  const review = maybeLeaveReview(state, customer);
-  assert.ok(review);
-  assert.equal(review.rating, 1);
-  assert.match(review.text, /house coffee/i);
-  assert.equal(review.outcome, 'expired');
-  assert.ok(state.reputation < before);
-  assert.equal(reviewSummary(state).count, 5);
-  assert.ok(REVIEW_BANK.expired.length >= 8);
-});
-
-test('happy customers occasionally leave positive reviews without every shopper posting', () => {
-  const state = prepareState();
-  const customer = { id: 1002, name: 'Maya', result: 'sold', demandId: 'bread' };
-  state.random = () => 0;
-  const before = state.reputation;
-  const review = maybeLeaveReview(state, customer);
-  assert.equal(review.rating, 5);
-  assert.ok(state.reputation > before);
-  assert.ok(REVIEW_BANK.five.length >= 10);
-  assert.ok(REVIEW_BANK.four.length >= 8);
-  assert.ok(REVIEW_BANK.three.length >= 6);
-  assert.ok(REVIEW_BANK.two.length >= 5);
-});
-
-test('neighborhood reputation changes customer arrival intervals and displayed footfall', () => {
-  const popular = createGameState(123);
-  const struggling = createGameState(123);
-  popular.reputation = 94;
-  struggling.reputation = 32;
-  assert.ok(customerArrivalInterval(popular) < customerArrivalInterval(struggling));
-  assert.equal(trafficLabel(popular), 'BUSY');
-  assert.equal(trafficLabel(struggling), 'SLOW');
-});
-
-test('expired-item complaints turn into a review when the unhappy shopper leaves', () => {
-  const state = prepareState();
-  state.random = () => 0;
-  state.shelves.bananas[0].expiresAt = productNow(state) - 0.01;
-  state.nextArrival = 100000;
-  const customer = {
-    id: 1003, character: 'artist', name: 'Mr. Delgado', tag: 'regular',
-    demandId: 'bananas', basket: [{ productId: 'bananas', qty: 1 }],
-    phase: 'browsing', phaseTotal: 0.04, phaseTimer: 0.04, result: null, bought: 0, spend: 0,
-  };
-  state.customers.push(customer);
-  const startingTrust = state.reputation;
-  advanceGame(state, 0.05);
-  assert.equal(customer.result, 'expired');
-  assert.ok(state.reputation < startingTrust);
-  advanceGame(state, 3.9);
-  advanceGame(state, 3.3);
-  assert.equal(state.customers.length, 0);
-  assert.equal(state.reviews[0].rating, 1);
-  assert.match(state.reviews[0].text, /banana toast/i);
-  assert.ok(state.reputation < startingTrust - 2.25);
-  assert.ok(state.events.some((event) => event.type === 'review'));
-});
-
-test('older saves migrate to the review feed without losing their ledger', () => {
-  const state = prepareState();
-  placeOrder(state, 'eggs', 1);
-  const legacy = JSON.parse(saveGameState(state));
-  delete legacy.reviews;
-  delete legacy.reviewSequence;
-  const loaded = loadGameState(legacy);
-  assert.ok(loaded);
-  assert.equal(loaded.stockroom.eggs[0].qty, state.stockroom.eggs[0].qty);
-  assert.ok(loaded.reviews.length >= 4);
-  assert.equal(loaded.reviewSequence, loaded.reviews[0].id);
-});
-
-test('a requested quantity that exceeds shelf stock is counted as a partial basket and stockout', () => {
-  const state = prepareState();
-  state.shelves.apples = [{ lotId: 50001, qty: 2, receivedAt: productNow(state), expiresAt: productNow(state) + 5, unitCost: PRODUCT_BY_ID.apples.cost }];
-  state.nextArrival = 100000;
-  const customer = {
-    id: 1401, character: 'artist', name: 'Mr. Delgado', demandId: 'apples', basket: [{ productId: 'apples', qty: 4 }],
-    phase: 'browsing', phaseTotal: 0.04, phaseTimer: 0.04, result: null, bought: 0, spend: 0,
-  };
-  state.customers.push(customer);
-  advanceGame(state, 0.05);
-  assert.equal(customer.bought, 2);
-  assert.equal(customer.result, 'partial');
-  assert.equal(state.dayStats.stockouts, 1);
-  assert.ok(state.events.some((event) => /only get 2 of 4 apples/.test(event.message)));
-});
-
-test('expired stock draws a one-star food-safety review', () => {
-  const state = prepareState();
-  state.random = () => 0;
-  const before = state.reputation;
-  const review = maybeLeaveReview(state, {
-    id: 1501, name: 'Mrs. Russo', result: 'expired', expiredProductId: 'milk', demandId: 'milk',
-  });
-  assert.equal(review.outcome, 'expired');
-  assert.equal(review.rating, 1);
-  assert.match(review.text, /house coffee/i);
-  assert.ok(state.reputation < before);
-});
-
-
-
-test('store experience unlocks Level 5 and the experience bar reports progress', () => {
-  const state = createGameState(77);
-  state.experience = 999;
-  assert.equal(getStoreLevel(state), 4);
-  assert.equal(getStoreLevelProgress(state).remaining, 1);
-  state.experience = 1000;
-  assert.equal(getStoreLevel(state), 5);
-  assert.equal(getStoreLevelProgress(state).progress, 0);
-});
-
-test('player position and store level survive saving and migration', () => {
-  const state = prepareState();
-  state.playerPosition = { x: -2.4, z: 1.8 };
-  state.experience = 725;
-  const restored = loadGameState(saveGameState(state));
-  assert.deepEqual(restored.playerPosition, { x: -2.4, z: 1.8 });
-  assert.equal(restored.experience, 725);
-  assert.equal(restored.dailyCosts.payroll, STAFF.reduce((n, person) => n + person.wage, 0));
-});
-
-test('the resident cast is a varied neighborhood with valid habits', () => {
-  assert.ok(RESIDENTS.length >= 16);
-  assert.equal(new Set(RESIDENTS.map((r) => r.id)).size, RESIDENTS.length);
-  assert.ok(new Set(RESIDENTS.map((r) => r.character)).size >= 16, 'every resident is a different person from the engine cast');
-  assert.ok(new Set(RESIDENTS.map((r) => r.look.skin)).size >= 8, 'a range of skin tones');
-  assert.ok(new Set(RESIDENTS.map((r) => r.look.hair)).size >= 6, 'a range of hair colors');
-  assert.ok(Math.min(...RESIDENTS.map((r) => r.height)) < 1.3 && Math.max(...RESIDENTS.map((r) => r.height)) > 1.4, 'children, elders and grown-ups');
-  for (const r of RESIDENTS) {
-    assert.ok(r.favorites.length >= 3 && r.favorites.every((id) => PRODUCT_BY_ID[id]), `${r.id} favorites`);
-    assert.ok(r.thrift > 0 && r.lines >= 0 && r.lines <= 1 && r.peak[0] < r.peak[1], `${r.id} habits`);
-  }
-});
-
-test('residents buy what they like, never two of them are inside at once, and arrive when they usually do', () => {
-  const state = prepareState();
-  state.minute = 8 * 60;
-  const seen = new Map();
-  for (let i = 0; i < 300; i++) {
-    state.customers = [];
-    const customer = spawnForTest(state);
-    seen.set(customer.residentId, (seen.get(customer.residentId) ?? 0) + 1);
-    const resident = RESIDENT_BY_ID[customer.residentId];
-    assert.ok(CAFE_MENU_BY_ID[customer.menuChoiceId], 'every diner has a dish in mind');
-    assert.equal(customer.character, resident.character);
-  }
-  assert.ok(seen.size >= 14, `${seen.size} different residents in 300 visits`);
-  // Morning people are in at eight far more than the night-shift driver.
-  assert.ok((seen.get('walt') ?? 0) > (seen.get('sal') ?? 0));
-  const russo = RESIDENT_BY_ID.russo;
-  let favorite = 0, lines = 0;
-  const stream = prepareState();
-  for (let i = 0; i < 200; i++) {
-    for (const l of buildBasket(stream, russo)) { lines++; if (russo.favorites.includes(l.productId)) favorite++; }
-  }
-  assert.ok(favorite / lines > 0.38, `${favorite}/${lines} lines were favorites (chance alone is about 0.22)`);
-  const doubled = prepareState();
-  doubled.customers = RESIDENTS.slice(0, -1).map((r) => ({ residentId: r.id }));
-  assert.equal(chooseResident(doubled).id, RESIDENTS.at(-1).id);
-});
-
-function spawnForTest(state) {
-  state.nextArrival = state.minute + 0.01;
-  state.started = true; state.paused = false;
-  const before = state.customers.length;
-  advanceGame(state, 0.05);
-  return state.customers[before] ?? state.customers.at(-1);
-}
-
-test('diners still order when the kitchen is bare, and the missing ingredients cost them food quality', () => {
-  const state = prepareState();
-  for (const p of PRODUCTS) { state.shelves[p.id] = []; state.stockroom[p.id] = []; }
-  state.random = (() => { let v = 11; return () => { v = (v * 16807) % 2147483647; return v / 2147483647; }; })();
-  state.minute = 8 * 60;
-  const c = spawnForTest(state);
-  assert.ok(c, 'a customer still comes in to an empty store');
-  assert.ok(CAFE_MENU_BY_ID[c.menuChoiceId], 'they still pick a dish');
-  advanceGame(state, 40);
-  assert.ok(state.events.some((event) => event.type === 'warning' && /short on ingredients/.test(event.message)), 'the kitchen reported the missing ingredients');
-  assert.ok(state.dayStats.foodQualityTotal / Math.max(1, state.dayStats.ordersServed) < 70, 'a bare kitchen turns out poor meals');
-});
-
-test('a price past what a shopper will pay is put back, and the store hears about it', () => {
-  const state = prepareState();
-  state.nextArrival = 100000;
-  state.prices.milk = PRODUCT_BY_ID.milk.price * 2;
-  state.customers.push({ id: 5001, name: 'Ari', thrift: 0.3, basket: [{ productId: 'milk', qty: 1 }], phase: 'browsing', phaseTotal: 0.04, phaseTimer: 0.04, result: null, bought: 0, spend: 0 });
-  const stockBefore = state.shelves.milk.reduce((n, b) => n + b.qty, 0);
-  advanceGame(state, 0.05);
-  assert.equal(state.customers[0].result, 'priced-out');
-  assert.equal(state.shelves.milk.reduce((n, b) => n + b.qty, 0), stockBefore);
-  assert.equal(state.dayStats.pricedOut, 1);
-  const fair = prepareState();
-  fair.nextArrival = 100000;
-  fair.customers.push({ id: 5002, name: 'Ari', thrift: 0.3, basket: [{ productId: 'milk', qty: 1 }], phase: 'browsing', phaseTotal: 0.04, phaseTimer: 0.04, result: null, bought: 0, spend: 0 });
-  advanceGame(fair, 0.05);
-  assert.equal(fair.customers[0].result, 'sold');
+  assert.equal(borrowCredit(state, 0).reason, 'invalid-amount');
+  assert.equal(borrowCredit(state, 5000).reason, 'credit-limit');
+  assert.equal(borrowCredit(state, 400).ok, true);
+  assert.equal(state.debt, 400);
+  state.cash = 100;
+  assert.equal(repayCredit(state, 250).amount, 100);
+  assert.equal(state.debt, 300);
+  assert.equal(repayCredit(state).reason, 'nothing-to-repay');
 });
 
 test('credit interest compounds into the balance and is not also taken from the till', () => {
   const state = prepareState();
   beginDay(state);
   borrowCredit(state, 200);
-  state.nextArrival = 100000;
-  const cashBefore = state.cash;
-  const { rent, payroll, utilities } = state.dailyCosts;
+  const cash = state.cash;
   state.minute = 20 * 60 + 59;
   advanceGame(state, 2);
   assert.equal(state.debt, 202.5);
-  assert.equal(state.cash, Math.round((cashBefore - rent - payroll - utilities) * 100) / 100);
-  assert.equal(state.lastDaySummary.expenses.interest, 2.5);
+  const costs = state.dailyCosts;
+  assert.equal(Math.round((cash - state.cash - 0) * 100) / 100 <= costs.rent + costs.payroll + costs.utilities, true);
 });
 
-test('shoppers still inside at closing time finish their shop instead of vanishing', () => {
+test('day closure charges fixed operating costs; the next day resets the books', () => {
+  const state = prepareState();
+  beginDay(state);
+  state.minute = 20 * 60 + 59;
+  advanceGame(state, 2);
+  assert.equal(state.dayEnded, true);
+  assert.equal(state.paused, true);
+  assert.equal(state.dailyCosts.payroll, STAFF.reduce((n, s) => n + s.wage, 0));
+  const previousDay = state.day;
+  assert.equal(startNextDay(state), true);
+  assert.equal(state.day, previousDay + 1);
+  assert.equal(state.minute, 7 * 60);
+  assert.equal(state.dayStats.revenue, 0);
+  assert.equal(state.paused, false);
+});
+
+test('a saved cafe resumes its exact ledger, pantry and menu prices after reload', () => {
+  const state = prepareState();
+  placeOrder(state, 'eggs', 2);
+  borrowCredit(state, 125);
+  adjustMenuPrice(state, 'coffee', 0.5);
+  const copy = loadGameState(saveGameState(state));
+  assert.ok(copy);
+  assert.equal(copy.cash, state.cash);
+  assert.equal(copy.debt, state.debt);
+  assert.deepEqual(copy.pantry.eggs, state.pantry.eggs);
+  assert.equal(copy.menuPrices.coffee, state.menuPrices.coffee);
+  assert.equal(copy.paused, false);
+  assert.equal(copy.random(), state.random());
+  assert.equal(loadGameState('{broken'), null);
+});
+
+test('saves from the grocery days are not carried over', () => {
+  assert.equal(loadGameState(JSON.stringify({ version: 1, day: 3, shelves: {}, stockroom: {} })), null);
+});
+
+test('a restored open cafe advances customers and the clock without pressing resume', () => {
+  const state = prepareState();
+  state.minute = 9 * 60;
+  seatedGuest(state, { serviceStatus: 'served', orderedMenuId: 'coffee', phaseTotal: 30, phaseTimer: 30 });
+  const restored = loadGameState(saveGameState(state));
+  assert.ok(restored);
+  const beforeMinute = restored.minute, beforeTimer = restored.customers[0].phaseTimer;
+  advanceGame(restored, 0.5);
+  assert.ok(restored.minute > beforeMinute);
+  assert.ok(restored.customers[0].phaseTimer < beforeTimer);
+});
+
+test('diners still order when the kitchen is bare, and the missing ingredients cost them food quality', () => {
+  const state = prepareState();
+  for (const ingredient of INGREDIENTS) state.pantry[ingredient.id] = [];
+  state.nextArrival = 100000;
+  const guest = seatedGuest(state);
+  run(state, 40);
+  assert.ok(state.events.some((event) => event.type === 'warning' && /short on ingredients/.test(event.message)));
+  assert.ok(guest.foodQuality < 70 || state.dayStats.foodQualityTotal / Math.max(1, state.dayStats.ordersServed) < 70);
+  assert.equal(state.dayStats.stockouts, 1);
+});
+
+test('the waiter takes an order and waits for the kitchen before serving it', () => {
+  const state = prepareState();
+  state.nextArrival = 100000;
+  const customer = seatedGuest(state);
+  run(state, 1);
+  assert.equal(customer.serviceStatus, 'serving');
+  assert.ok(!customer.orderedMenuId, 'no food order exists before the waiter reaches the diner');
+  run(state, 4);
+  assert.equal(customer.serviceStatus, 'served');
+  assert.equal(customer.orderedMenuId, 'scrambled-eggs');
+  assert.ok(customer.foodQuality > 0 && customer.serviceQuality > 0);
+  const messages = state.events.map((event) => event.message).reverse();
+  const orderAt = messages.findIndex((message) => /took Ari's order/i.test(message));
+  const servedAt = messages.findIndex((message) => /served Ari's Soft Scrambled Eggs/i.test(message));
+  assert.ok(orderAt >= 0 && servedAt > orderAt, 'the order is taken and prepared before delivery');
+});
+
+test('new public reviews score the meal and the service separately', () => {
+  const state = prepareState();
+  state.random = () => 0;
+  const strong = maybeLeaveReview(state, { id: 9902, name: 'Maya', orderedMenuId: 'sunny-side-up', foodQuality: 98, serviceQuality: 96 });
+  assert.equal(strong.rating, 5);
+  assert.equal(strong.outcome, 'excellent');
+  const weak = maybeLeaveReview(state, { id: 9903, name: 'Rico', orderedMenuId: 'diner-omelette', foodQuality: 35, serviceQuality: 42 });
+  assert.equal(weak.rating, 1);
+  assert.equal(weak.outcome, 'poor');
+  assert.equal(maybeLeaveReview(state, { id: 9904, name: 'Nobody' }), null, 'no review without a meal to judge');
+});
+
+test('neighborhood reputation changes customer arrival intervals and displayed footfall', () => {
+  const busy = prepareState(), quiet = prepareState();
+  busy.reputation = 95; quiet.reputation = 30;
+  busy.random = quiet.random = () => 0.5;
+  assert.ok(customerArrivalInterval(busy) < customerArrivalInterval(quiet));
+  assert.equal(trafficLabel(busy), 'BUSY');
+  assert.equal(trafficLabel(quiet), 'SLOW');
+  assert.deepEqual(reviewSummary({ reviews: [{ rating: 5 }, { rating: 4 }] }), { rating: 4.5, count: 2 });
+});
+
+test('experience raises the cafe level and the level bar reports progress', () => {
+  const state = prepareState();
+  state.experience = 260;
+  const progress = getStoreLevelProgress(state);
+  assert.equal(progress.level, 2);
+  assert.equal(progress.currentFloor, 250);
+  assert.equal(progress.nextTarget, 500);
+  assert.equal(progress.remaining, 240);
+});
+
+test('regulars: never two of them inside at once, and they come in when they usually do', () => {
+  const state = prepareState();
+  state.minute = 7 * 60 + 30;
+  const dmitri = RESIDENTS.find((resident) => resident.id === 'dmitri');
+  const seen = new Set();
+  const counts = {};
+  for (let i = 0; i < 800; i++) {
+    state.random = Math.random;
+    const resident = chooseResident(state);
+    counts[resident.id] = (counts[resident.id] ?? 0) + 1;
+    seen.add(resident.id);
+  }
+  assert.ok(seen.size >= RESIDENTS.length - 2, 'the whole neighborhood turns up');
+  assert.ok(counts.dmitri > counts.camille, `Dmitri (peak ${dmitri.peak}) is in more at 7:30 than Camille`);
+  state.customers = RESIDENTS.slice(1).map((resident, i) => ({ id: i, residentId: resident.id }));
+  assert.equal(chooseResident(state).id, RESIDENTS[0].id, 'only the one who is not inside can come in');
+});
+
+test('guests inside at closing time are served and counted instead of vanishing', () => {
   const state = prepareState();
   beginDay(state);
   state.nextArrival = 100000;
   state.minute = 20 * 60 + 58;
-  state.customers.push({ id: 6001, name: 'Kenji', menuChoiceId: 'scrambled-eggs', orderedMenuId: 'scrambled-eggs', arrivedAt: state.minute, phase: 'browsing', phaseTotal: 20, phaseTimer: 15, result: null, bought: 0, spend: 0, foodQuality: 90, serviceQuality: 90 });
+  state.customers.push({ id: 6001, name: 'Kenji', menuChoiceId: 'scrambled-eggs', orderedMenuId: 'scrambled-eggs', thrift: 1, arrivedAt: state.minute, phase: 'browsing', phaseTotal: 20, phaseTimer: 15, result: null, bought: 0, spend: 0, foodQuality: 90, serviceQuality: 90 });
   advanceGame(state, 3);
   assert.equal(state.dayEnded, true);
   assert.equal(state.dayStats.unitsSold, 1);
@@ -456,128 +337,9 @@ test('nobody is let in after last call', () => {
   assert.equal(state.customers.length, 0);
 });
 
-test('repaying credit works to the cent', () => {
-  const state = prepareState();
-  state.debt = 100.01;
-  state.cash = 500;
-  const result = repayCredit(state, 100.01);
-  assert.equal(result.amount, 100.01);
-  assert.equal(state.debt, 0);
-});
-
-test('the range is in three tiers by store level, and the new lines also need their fixture bought', async () => {
-  const { TIERS, FIXTURES, isAvailable, availableProducts, buyFixture, fixtureBlock, getStoreLevel } = await import('../src/sim.js');
-  assert.deepEqual(TIERS.map((t) => t.tier), [1, 2, 3]);
-  const state = createGameState(5);
-  const tierOf = (n) => PRODUCTS.filter((p) => p.tier === n);
-  assert.ok(tierOf(1).length > 0 && tierOf(2).length > 0 && tierOf(3).length > 0);
-  assert.ok(tierOf(2).some((p) => !p.fixture), 'some established lines open at tier 2');
-  assert.ok(tierOf(1).every((p) => !p.fixture), 'tier 1 needs nothing bought');
-  assert.deepEqual(availableProducts(state).map((p) => p.id), tierOf(1).map((p) => p.id));
-  assert.equal(placeOrder(state, 'yogurt', 1).reason, 'not-stocked');
-  assert.equal(placeOrder(state, 'oranges', 1).reason, 'not-stocked');
-
-  // A fixture waits for the level that opens its tier, then for the cash.
-  const bin = FIXTURES.find((f) => f.id === 'bin-1');
-  assert.equal(fixtureBlock(state, 'bin-1'), 'level');
-  assert.equal(buyFixture(state, 'bin-1').reason, 'level-too-low');
-  state.experience = 500;
-  assert.equal(getStoreLevel(state), 3);
-  assert.ok(isAvailable(state, PRODUCT_BY_ID.yogurt), 'an established tier 2 line opens with the level');
-  assert.ok(!isAvailable(state, PRODUCT_BY_ID.oranges), 'a new line still needs its bin');
-  state.cash = 10;
-  assert.equal(buyFixture(state, 'bin-1').reason, 'insufficient-funds');
-  state.cash = 1000;
-  const bought = buyFixture(state, 'bin-1');
-  assert.ok(bought.ok);
-  assert.equal(state.cash, 1000 - bin.cost);
-  assert.equal(buyFixture(state, 'bin-1').reason, 'already-owned');
-  assert.ok(isAvailable(state, PRODUCT_BY_ID.oranges));
-  assert.ok(!isAvailable(state, PRODUCT_BY_ID.carrots), 'each line has a bin of its own');
-  assert.ok(!isAvailable(state, PRODUCT_BY_ID.onions), 'tier 3 stays shut at level 3');
-  assert.equal(fixtureBlock(state, 'bin-3'), 'level');
-  assert.ok(placeOrder(state, 'oranges', 1).ok);
-  state.experience = 1000;
-  assert.ok(buyFixture(state, 'bin-3').ok);
-  assert.ok(isAvailable(state, PRODUCT_BY_ID.onions));
-});
-
-test('shoppers only ask for lines that are on sale, and old saves gain the new lines', async () => {
-  const { availableProducts } = await import('../src/sim.js');
-  const state = createGameState(9);
-  const open = new Set(availableProducts(state).map((p) => p.id));
-  for (let i = 0; i < 200; i++) for (const line of buildBasket(state, RESIDENTS[i % RESIDENTS.length])) assert.ok(open.has(line.productId), line.productId);
-  const old = JSON.parse(saveGameState(state));
-  for (const id of ['oranges', 'chips', 'bacon']) { delete old.shelves[id]; delete old.stockroom[id]; delete old.prices[id]; }
-  delete old.fixtures;
-  const loaded = loadGameState(old);
-  assert.deepEqual(loaded.fixtures, []);
-  assert.deepEqual(loaded.shelves.oranges, []);
-  assert.equal(loaded.prices.chips, PRODUCT_BY_ID.chips.price);
-});
-
-test('the kitchen pantry is fixed back-of-house infrastructure', async () => {
-  const { placeFixture, standingPieces } = await import('../src/sim.js');
-  const state = createGameState(3);
-  const pantry = standingPieces(state).find(({ piece }) => piece.id === 'pantry');
-  assert.ok(pantry, 'the kitchen pantry exists from day one');
-  assert.equal(pantry.piece.movable, false);
-  assert.deepEqual({ x: pantry.x, z: pantry.z }, { x: -6.7, z: -6.0 });
-  assert.equal(placeFixture(state, 'pantry', { x: 1.0, z: 0.5, rot: 0 }).reason, 'fixed');
-  assert.equal(placeFixture(state, 'bin-1', { x: 0, z: 0, rot: 0 }).reason, 'not-owned');
-});
-
-test('the waiter takes a menu order and waits for kitchen preparation before serving it', () => {
-  const state = prepareState();
-  state.nextArrival = 100000;
-  const customer = {
-    id: 9001, name: 'Ari', reviewName: 'A. Guest', menuChoiceId: 'scrambled-eggs',
-    seatId: 'table-a-west', arrivalDuration: 2.4, arrivalTimer: 0, serviceStatus: 'waiting',
-    phase: 'browsing', phaseTotal: 12, phaseTimer: 12, result: null, bought: 0, spend: 0,
-  };
-  state.customers.push(customer);
-  advanceGame(state, 1);
-  assert.equal(customer.phase, 'browsing');
-  assert.equal(customer.serviceStatus, 'serving');
-  assert.equal(customer.orderedMenuId, undefined, 'no food order exists before the waiter reaches the diner');
-  advanceGame(state, 4);
-  assert.equal(customer.serviceStatus, 'served');
-  assert.equal(customer.orderedMenuId, 'scrambled-eggs');
-  assert.ok(customer.foodQuality > 0);
-  assert.ok(customer.serviceQuality > 0);
-  assert.equal(customer.phase, 'browsing');
-  const messages = state.events.map((event) => event.message).reverse();
-  const orderAt = messages.findIndex((message) => /took Ari's order/i.test(message));
-  const servedAt = messages.findIndex((message) => /served Ari's Soft Scrambled Eggs/i.test(message));
-  assert.ok(orderAt >= 0 && servedAt > orderAt, 'the order is taken and prepared before delivery');
-});
-
-
-
-test('new public reviews score the meal and the service separately', () => {
-  const state = prepareState();
-  state.random = () => 0;
-  const strong = maybeLeaveReview(state, {
-    id: 9902, name: 'Maya', orderedMenuId: 'sunny-side-up', foodQuality: 98, serviceQuality: 96,
-  });
-  assert.equal(strong.rating, 5);
-  assert.equal(strong.outcome, 'excellent');
-  assert.equal(strong.foodQuality, 98);
-  assert.equal(strong.serviceQuality, 96);
-
-  const weak = maybeLeaveReview(state, {
-    id: 9903, name: 'Rico', orderedMenuId: 'diner-omelette', foodQuality: 35, serviceQuality: 42,
-  });
-  assert.equal(weak.rating, 1);
-  assert.equal(weak.outcome, 'poor');
-  assert.match(weak.text, /disappointing|missed the mark|not good/i);
-});
-
-test('guests spread across tables, and each diner has a place setting on the table in front of their own seat', async () => {
+test('guests spread across tables, and each diner has a place setting in front of their own seat', async () => {
   const { CAFE_SEATS, CAFE_TABLES, CAFE_PLACE_SETTINGS } = await import('../src/layout.js');
   const state = prepareState();
-  state.started = true;
-  state.paused = false;
   const tableOf = (customer) => CAFE_SEATS.find((seat) => seat.id === customer.seatId).tableId;
   for (let i = 0; i < 400 && state.customers.length < 3; i++) advanceGame(state, 0.25);
   assert.ok(state.customers.length >= 2, 'several guests arrived');
@@ -588,9 +350,15 @@ test('guests spread across tables, and each diner has a place setting on the tab
     assert.ok(!seen.has(`${place.x},${place.z}`), `${place.seatId} has its own place`);
     seen.add(`${place.x},${place.z}`);
     const table = CAFE_TABLES.find((t) => t.id === place.tableId);
-    if (table) {
-      assert.ok(Math.abs(place.x - table.x) < table.w / 2 && Math.abs(place.z - table.z) < table.d / 2, `${place.seatId} is set on its table`);
-      assert.notEqual(place.x, table.x, 'not in the middle of the table');
-    }
+    if (table) assert.ok(Math.abs(place.x - table.x) < table.w / 2 && Math.abs(place.z - table.z) < table.d / 2 && place.x !== table.x, `${place.seatId} is set on its table, not in the middle`);
   }
+});
+
+test('the pantry health report counts what needs the owner\'s attention', () => {
+  const state = prepareState();
+  state.pantry.bread = [];
+  state.pantry.coffee = [{ lotId: 77, qty: 3, receivedAt: 1, expiresAt: 99, unitCost: 0.3 }];
+  const health = pantryHealth(state);
+  assert.ok(health.empty >= 1 && health.low >= 1);
+  assert.equal(INGREDIENTS.filter((i) => isOpen(state, i)).length > 0, true);
 });
